@@ -1,6 +1,7 @@
 import './style.css';
 import { renderSidebar } from './sidebar';
 import { startRouter } from './router';
+import { renderDocumentView } from './views/document';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <aside class="sidebar" id="sidebar"></aside>
@@ -21,15 +22,11 @@ startRouter(
   [
     {
       pattern: /^#\/document\/new$/,
-      render: (el) => {
-        el.innerHTML = '<p class="empty">Document nou (în curs de implementare)</p>';
-      },
+      render: (el) => renderDocumentView(el, undefined, refreshSidebar),
     },
     {
       pattern: /^#\/document\/(\d+)$/,
-      render: (el, id) => {
-        el.innerHTML = `<p class="empty">Document ${id} (în curs de implementare)</p>`;
-      },
+      render: (el, id) => renderDocumentView(el, id, refreshSidebar),
     },
     {
       pattern: /^#\/setari$/,

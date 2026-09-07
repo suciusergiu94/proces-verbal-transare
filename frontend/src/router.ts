@@ -22,7 +22,12 @@ async function handleRoute(): Promise<void> {
   for (const route of currentRoutes) {
     const match = route.pattern.exec(hash);
     if (match) {
-      await route.render(currentOutlet, ...match.slice(1));
+      try {
+        await route.render(currentOutlet, ...match.slice(1));
+      } catch (err) {
+        console.error('Eroare la afișarea paginii', err);
+        currentOutlet.innerHTML = '<p class="empty">A apărut o eroare la afișarea paginii.</p>';
+      }
       return;
     }
   }
