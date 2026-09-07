@@ -1,5 +1,6 @@
 import {
   DeleteDocument,
+  ExportPDF,
   GetDocument,
   GetSettings,
   ListDocuments,
@@ -20,6 +21,7 @@ export type Settings = model.Settings;
 
 export {
   DeleteDocument,
+  ExportPDF,
   GetDocument,
   GetSettings,
   ListDocuments,

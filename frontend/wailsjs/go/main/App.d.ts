@@ -4,6 +4,8 @@ import {model} from '../models';
 
 export function DeleteDocument(arg1:number):Promise<void>;
 
+export function ExportPDF(arg1:number):Promise<string>;
+
 export function GetDocument(arg1:number):Promise<model.Document>;
 
 export function GetSettings():Promise<model.Settings>;

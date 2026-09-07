@@ -6,6 +6,10 @@ export function DeleteDocument(arg1) {
   return window['go']['main']['App']['DeleteDocument'](arg1);
 }
 
+export function ExportPDF(arg1) {
+  return window['go']['main']['App']['ExportPDF'](arg1);
+}
+
 export function GetDocument(arg1) {
   return window['go']['main']['App']['GetDocument'](arg1);
 }

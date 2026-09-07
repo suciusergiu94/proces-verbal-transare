@@ -2,10 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"time"
+
+	"github.com/pkg/browser"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"proces-verbal-transare/internal/appdir"
 	"proces-verbal-transare/internal/model"
+	"proces-verbal-transare/internal/pdfdoc"
 	"proces-verbal-transare/internal/store"
 )
 
@@ -155,4 +161,46 @@ func (a *App) SaveDocument(doc model.Document) (model.Document, error) {
 // DeleteDocument removes a document and its rows.
 func (a *App) DeleteDocument(id int64) error {
 	return a.store.DeleteDocument(id)
+}
+
+// ExportPDF renders a saved document, asks the user where to put the PDF and
+// opens it with the system default handler. It returns the saved path, or an
+// empty string when the user cancels the dialog.
+func (a *App) ExportPDF(id int64) (string, error) {
+	doc, err := a.store.GetDocument(id)
+	if err != nil {
+		return "", err
+	}
+	settings, err := a.store.GetSettings()
+	if err != nil {
+		return "", err
+	}
+
+	data, err := pdfdoc.Render(doc, settings.UnitateNume)
+	if err != nil {
+		return "", err
+	}
+
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Salvează PDF",
+		DefaultFilename: fmt.Sprintf("proces-verbal-%d-%s.pdf", doc.Nr, doc.Data),
+		Filters: []runtime.FileFilter{
+			{DisplayName: "Fișiere PDF (*.pdf)", Pattern: "*.pdf"},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("alegere fisier: %w", err)
+	}
+	if path == "" {
+		return "", nil // user cancelled
+	}
+
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return "", fmt.Errorf("scriere fisier PDF: %w", err)
+	}
+	if err := browser.OpenFile(path); err != nil {
+		// The file is on disk; failing to open the viewer is not fatal.
+		runtime.LogWarningf(a.ctx, "nu s-a putut deschide PDF-ul: %v", err)
+	}
+	return path, nil
 }

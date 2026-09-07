@@ -1,5 +1,6 @@
 import {
   DeleteDocument,
+  ExportPDF,
   GetDocument,
   GetSettings,
   NewDocumentDraft,
@@ -235,6 +236,11 @@ export async function renderDocumentView(
 
     outlet.querySelector('#save')!.addEventListener('click', () => void onSave());
 
+    const printBtn = outlet.querySelector('#print') as HTMLButtonElement | null;
+    if (printBtn && !printBtn.disabled) {
+      printBtn.addEventListener('click', () => void onPrint());
+    }
+
     const deleteBtn = outlet.querySelector('#delete');
     if (deleteBtn) deleteBtn.addEventListener('click', () => void onDelete());
   }
@@ -329,6 +335,15 @@ export async function renderDocumentView(
       navigate(`#/document/${saved.id}`);
     } catch (err) {
       showError('Documentul nu a putut fi salvat', err);
+    }
+  }
+
+  async function onPrint(): Promise<void> {
+    try {
+      const path = await ExportPDF(doc.id);
+      if (path === '') return; // dialog cancelled
+    } catch (err) {
+      showError('PDF-ul nu a putut fi generat', err);
     }
   }
 
