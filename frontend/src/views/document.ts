@@ -90,7 +90,7 @@ export async function renderDocumentView(
           </div>
         </div>
         <div class="field">
-          <label for="f-id-tip">Suma cu care se … gestiunea</label>
+          <label for="f-id-tip">Suma cu care se încarcă/descarcă gestiunea</label>
           <div class="inline-field">
             <select id="f-id-tip">
               <option value=""></option>
