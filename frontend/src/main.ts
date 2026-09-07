@@ -1,24 +1,42 @@
 import './style.css';
-import { Greet } from '../wailsjs/go/main/App';
+import { renderSidebar } from './sidebar';
+import { startRouter } from './router';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-  <div>
-    <h1>proces-verbal-transare</h1>
-    <div id="result">Please enter your name below 👇</div>
-    <div class="input-box">
-      <input id="name" class="input" type="text" autocomplete="off" />
-      <button class="btn" id="greet">Greet</button>
-    </div>
-  </div>
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main" id="outlet"></main>
 `;
 
-const resultElement = document.getElementById('result') as HTMLDivElement;
-const nameElement = document.getElementById('name') as HTMLInputElement;
+const sidebar = document.getElementById('sidebar') as HTMLElement;
+const outlet = document.getElementById('outlet') as HTMLElement;
 
-function greet() {
-    Greet(nameElement.value).then((result) => {
-        resultElement.innerText = result;
-    });
+/** Re-reads the document history; called after any save or delete. */
+export function refreshSidebar(): Promise<void> {
+  return renderSidebar(sidebar);
 }
 
-document.getElementById('greet')!.addEventListener('click', greet);
+void refreshSidebar();
+
+startRouter(
+  [
+    {
+      pattern: /^#\/document\/new$/,
+      render: (el) => {
+        el.innerHTML = '<p class="empty">Document nou (in curs de implementare)</p>';
+      },
+    },
+    {
+      pattern: /^#\/document\/(\d+)$/,
+      render: (el, id) => {
+        el.innerHTML = `<p class="empty">Document ${id} (in curs de implementare)</p>`;
+      },
+    },
+    {
+      pattern: /^#\/setari$/,
+      render: (el) => {
+        el.innerHTML = '<p class="empty">Setări (in curs de implementare)</p>';
+      },
+    },
+  ],
+  outlet,
+);
