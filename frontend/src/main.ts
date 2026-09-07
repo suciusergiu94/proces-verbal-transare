@@ -2,6 +2,7 @@ import './style.css';
 import { renderSidebar } from './sidebar';
 import { startRouter } from './router';
 import { renderDocumentView } from './views/document';
+import { renderSetariView } from './views/setari';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <aside class="sidebar" id="sidebar"></aside>
@@ -30,9 +31,7 @@ startRouter(
     },
     {
       pattern: /^#\/setari$/,
-      render: (el) => {
-        el.innerHTML = '<p class="empty">Setări (în curs de implementare)</p>';
-      },
+      render: (el) => renderSetariView(el),
     },
   ],
   outlet,
