@@ -1,0 +1,14 @@
+# Build output
+/build/bin
+
+# Frontend
+/frontend/dist/*
+!/frontend/dist/.gitkeep
+/frontend/node_modules
+
+# IDE
+.vscode
+.idea
+
+# OS
+.DS_Store
