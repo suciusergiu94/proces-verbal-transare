@@ -10,7 +10,7 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
   try {
     documents = await ListDocuments();
   } catch (err) {
-    showError('Nu s-a putut incarca lista de documente', err);
+    showError('Nu s-a putut încărca lista de documente', err);
     documents = [];
   }
 
@@ -20,7 +20,7 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
         <li>
           <a class="doc-link" href="#/document/${doc.id}">
             <span class="doc-nr">NR ${doc.nr}</span>
-            <span class="doc-meta">${formatDateRO(doc.data)}${doc.gestiune ? ` — ${escapeHtml(doc.gestiune)}` : ''}</span>
+            <span class="doc-meta">${escapeHtml(formatDateRO(doc.data))}${doc.gestiune ? ` — ${escapeHtml(doc.gestiune)}` : ''}</span>
           </a>
         </li>`,
     )

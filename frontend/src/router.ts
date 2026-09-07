@@ -26,7 +26,7 @@ async function handleRoute(): Promise<void> {
       return;
     }
   }
-  currentOutlet.innerHTML = '<p class="empty">Pagina nu a fost gasita.</p>';
+  currentOutlet.innerHTML = '<p class="empty">Pagina nu a fost găsită.</p>';
 }
 
 /** Installs the routes and renders the current hash. */

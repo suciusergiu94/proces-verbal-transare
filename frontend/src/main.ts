@@ -22,19 +22,19 @@ startRouter(
     {
       pattern: /^#\/document\/new$/,
       render: (el) => {
-        el.innerHTML = '<p class="empty">Document nou (in curs de implementare)</p>';
+        el.innerHTML = '<p class="empty">Document nou (în curs de implementare)</p>';
       },
     },
     {
       pattern: /^#\/document\/(\d+)$/,
       render: (el, id) => {
-        el.innerHTML = `<p class="empty">Document ${id} (in curs de implementare)</p>`;
+        el.innerHTML = `<p class="empty">Document ${id} (în curs de implementare)</p>`;
       },
     },
     {
       pattern: /^#\/setari$/,
       render: (el) => {
-        el.innerHTML = '<p class="empty">Setări (in curs de implementare)</p>';
+        el.innerHTML = '<p class="empty">Setări (în curs de implementare)</p>';
       },
     },
   ],
