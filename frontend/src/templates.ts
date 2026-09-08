@@ -1,5 +1,6 @@
 import type { Template } from './api';
 import { procenteDinCantitati, round3, sumaProcente } from './calc';
+import { formatNumber } from './format';
 
 /**
  * Pure logic behind the template screens. It lives outside the views so it can
@@ -48,13 +49,12 @@ export function duplicateTemplate(t: Template): Template {
 export type TemplateProblem = { templateIndex: number; message: string };
 
 /**
- * Renders a ratio the Romanian way — comma decimal separator, no padded
- * trailing zeros — for the validation messages below. Unlike formatNumber
- * (fixed decimals, dot separator, meant for the on-screen tables) these
- * figures read naturally in prose: "97,5 %", not "97.500 %".
+ * Renders a ratio the Romanian way: formatNumber's three-decimal fixed
+ * precision (the same convention Setări's tables use), with the decimal
+ * separator swapped from a dot to a comma for prose.
  */
 function formatProcent(value: number): string {
-  return String(value).replace('.', ',');
+  return formatNumber(value, 3).replace('.', ',');
 }
 
 /**
