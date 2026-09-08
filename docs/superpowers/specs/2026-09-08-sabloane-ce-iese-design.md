@@ -38,9 +38,15 @@ that template rather than to a global list.
 
 ## Data model
 
-### Schema changes (migration v4 → v5)
+### One clean schema, no migration
 
-`schemaSQL`, which fresh installs are created from, declares the full shape:
+The app is pre-release: there is no installed database whose contents have to
+survive. So templates are introduced by **changing the schema in place** rather
+than by migrating onto it, and the accumulated v2/v3/v4 upgrade machinery goes
+with it. See *Removing the upgrade machinery* below.
+
+`schemaSQL` declares the full shape, and a fresh install is created from it
+directly:
 
 ```sql
 CREATE TABLE IF NOT EXISTS templates (
@@ -71,57 +77,64 @@ denumire, U/M and price at save time — so deleting a template must not delete
 history. What the document loses is only the ability to write ratios back; see
 *A document whose template was deleted* under **Frontend**.
 
-**Upgraded databases get the columns without the FK clause.** SQLite's
-`ALTER TABLE ... ADD COLUMN` accepts a `REFERENCES` clause only when the column's
-default is NULL, and `products.template_id` needs `NOT NULL`. So the migration
-runs:
+Both constraints are enforced at runtime: `store.Open` already connects with
+`_pragma=foreign_keys(1)`. So deleting a template row is enough — its products
+go with it, and its documents survive with `template_id NULL`. `SaveTemplates`
+does not need to delete products by hand.
 
-```sql
-ALTER TABLE products  ADD COLUMN template_id INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE documents ADD COLUMN template_id INTEGER;
-CREATE INDEX IF NOT EXISTS idx_products_template ON products(template_id, ordine);
-```
+### Removing the upgrade machinery
 
-and the backfill below immediately replaces every 0. The asymmetry with fresh
-installs is accepted rather than worked around by rebuilding the tables: the app
-is the only writer, and a table rebuild on a user's live database is a worse
-risk than a declarative constraint that exists on new installs only.
+`migrate` currently carries three one-time upgrades, all of which existed to
+carry a v1 database forward to v4. None of them has a database left to serve,
+and all of them get in the way of a clean schema, so they are deleted:
 
-**Consequence for deletion.** Because upgraded installs have no FK on
-`products.template_id`, `SaveTemplates` must **delete a removed template's
-products explicitly**, in the same transaction, rather than relying on
-`ON DELETE CASCADE`. It must likewise **null out `documents.template_id`
-explicitly** for documents pointing at a deleted template. On a fresh install
-both are then no-ops that the FK would have done anyway; on an upgraded install
-they are the only thing keeping orphans out. This is the single most important
-detail of the whole change and has its own test.
+- the `ALTER TABLE ... ADD COLUMN cota_tva` loop (v2);
+- `backfillProcente` and its `procent_din_intrare` ALTER (v3);
+- `backfillGestiune` and its `gestiune` ALTER (v4);
+- the `hasColumn` helper, which has no other caller.
 
-### Backfill
+`procenteDinCantitati` **stays** — it is not migration code; `seedProcente`
+derives the shipped ratios with it.
 
-The migration runs on the absence of `products.template_id`, so exactly once:
+`internal/store/migrate_test.go` loses the six upgrade tests that cover the
+deleted paths and keeps nothing else; the file is removed. The seed coverage
+those tests overlapped with lives in `store_test.go` already and is extended
+below.
 
-1. Insert one template, `nume = "Carcasa Porc"`, `ordine = 0`.
-2. `UPDATE products SET template_id = <new id>` — every existing product joins
-   it, keeping its `ordine`.
-3. `UPDATE documents SET template_id = <new id>` — every existing document is
-   stamped with it, so "Salvează procentele noi" keeps working on documents
-   saved before this change.
-4. `PRAGMA user_version = 5` — the existing `if version < 4` stamp in `migrate`
-   becomes `if version < 5`.
+What remains in `migrate` is: apply `schemaSQL`, stamp
+`PRAGMA user_version = 5`, and — if the settings row is absent — seed.
 
-An install with no products at all still gets the template row, so Setări
-always has at least one section and "+ Document nou" always has something to
-offer.
+**Pre-release reset.** A database stamped below 5 predates templates and has a
+`products` table with no `template_id`, which every query would then fail on.
+Rather than crash, `migrate` drops every table when it finds one and continues
+into a fresh create-and-seed. This is guarded on `user_version < 5` and a
+non-zero version, so it fires exactly once per pre-release install and never on
+a new one. It is explicitly a pre-release convenience — commented as such, and
+to be replaced by a real migration the first time a shipped database matters.
 
-The name "Carcasa Porc" is chosen to match what a fresh install's seeded
-document already carries on its "ce intră" row ("Carcasa"), made specific.
+**This wipes the documents on any machine where a pre-release build has already
+been installed** — the current dev database and the friend's, if they have run
+the installer. Accepted: the app is not in production, and the value is in
+seeding correctly from here on.
 
 ### Seeding a fresh install
 
-`migrate` seeds as it does today, with one extra step first: insert the
-"Carcasa Porc" template, then insert the 19 seed products with its
-`template_id`, then the seeded proces verbal NR 1 with its `template_id`. The
-seeded document's "ce intră" row keeps its current denumire, `"Carcasa"`.
+The existing seed, plus templates:
+
+1. Insert the settings row, as today.
+2. Insert one template, `nume = "Carcasa Porc"`, `ordine = 0`.
+3. Insert the 19 seed products with that `template_id`, in printed order, with
+   the ratios `seedProcente` derives — unchanged except for the new column.
+4. Insert the shipped proces verbal NR 1 with that `template_id`, linked to the
+   seeded products exactly as today. Its "ce intră" row keeps its current
+   denumire, `"Carcasa"`.
+
+All of it stays in the one transaction it is in today, so a fresh install is
+either fully seeded or not seeded at all.
+
+The name "Carcasa Porc" is chosen to read as the first "ce intră" row of a
+document created from it — which is exactly what `NewDocumentDraft` will do
+with it for a template that has no documents yet.
 
 ### Go model
 
@@ -183,9 +196,10 @@ One transaction, mirroring today's `SaveProducts` diff, one level deeper:
   moves the check to both sides).
 
 Ratio validation (the 100% rule) stays in the frontend, where it is today.
-The store does not enforce it: `backfillProcente` and the seed both already
-produce lists that satisfy it, and a store-side refusal would make the
-migration's own writes illegal.
+The store does not enforce it. The rule belongs to the form that consumes the
+ratios, not to storage, and a store-side refusal would make an intermediate
+state — a template mid-edit, or one whose products were just reordered —
+unwritable for no gain.
 
 ### `NewDocumentDraft(templateID)`
 
@@ -308,21 +322,25 @@ as today.
 
 ### Go (`internal/store`)
 
-- **Migration v4 → v5** on a database built by the v4 schema with products and
-  documents: one template is created, every product and every document points
-  at it, `user_version` is 5, and ratios/ordine survive untouched.
-- Migration is idempotent — running `migrate` twice does not create a second
+Seeding is where the whole change is load-bearing now, so it gets the weight:
+
+- **Fresh seed**: exactly one template, named "Carcasa Porc"; all 19 products
+  on it, in printed order, with the ratios summing to exactly 100%; the seeded
+  proces verbal NR 1 stamped with it and linked to those product ids.
+- The existing seed assertions in `store_test.go` still hold — dated today,
+  footer consistent with its rows, `next_nr` past it, no reseed after the
+  document is deleted, prices and percentages intact.
+- `PRAGMA user_version` is 5 on a fresh database.
+- `Open` is idempotent: opening twice seeds once, and does not create a second
   template.
-- Migration of a v4 database with **no** products still yields one template.
-- Fresh seed: one template, 19 products on it, seeded document stamped with it.
-- `ListTemplates` returns templates in `ordine` with products in `ordine`.
+- **Pre-release reset**: a database stamped at 4 with the old shape is dropped
+  and reseeded, and comes back with one template and the 19 products. A
+  database stamped at 5 is left alone.
+- `ListTemplates` returns templates in `ordine`, each with its products in
+  `ordine`.
 - `SaveTemplates`: insert / update / delete of templates; insert / update /
   delete of products within a template; deleting a template removes its
-  products and leaves its documents intact with `template_id NULL`.
-- **The same deletion, on a database upgraded from v4** (which has no FK on
-  `products.template_id`): no orphaned products remain and no document is left
-  pointing at the deleted template. This is the test that proves the explicit
-  deletes in `SaveTemplates` are doing their job rather than the FK.
+  products (FK cascade) and leaves its documents intact with `template_id NULL`.
 - `SaveTemplates` refuses an empty slice and refuses a blank template name.
 - `LastDocument(templateID)` ignores documents of other templates.
 
@@ -351,13 +369,16 @@ as today.
 - Document: with `templateId == null`, the margin buttons and the ratio button
   are absent and typing an input quantity leaves "ce iese" alone.
 
-## Migration risk
+## Risk
 
-The one-way door is the v5 migration: it rewrites `products` and `documents` on
-a user's live database. It is guarded the way v3 and v4 already are — it runs
-on the absence of the column, inside the existing `migrate` flow, and does its
-inserts and updates in a single transaction so an interrupted upgrade leaves
-the database on v4 rather than half-converted.
+Deleting the upgrade machinery is a one-way door: after this, no database
+written by an earlier build can be read, only discarded and reseeded. That is
+the deliberate trade — the app is pre-release, and the alternative was carrying
+a missing-foreign-key asymmetry and a hand-rolled cascade into every install
+forever.
+
+The obligation it creates is that the **seed** must be right, since it is now
+the only path into a working database. Hence the weight on seed tests above.
 
 ## Open questions
 
