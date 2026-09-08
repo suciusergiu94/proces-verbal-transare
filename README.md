@@ -110,5 +110,8 @@ utilizatorului:
 - macOS: `~/Library/Application Support/proces-verbal-transare/data.db`
 - Windows: `%AppData%\proces-verbal-transare\data.db`
 
-La prima pornire se populează lista celor 19 produse de pe formularul tipărit;
-poate fi modificată din ecranul **Setări**.
+La prima pornire se creează șablonul *Carcasa Porc* cu cele 19 produse de pe
+formularul tipărit, împreună cu un proces verbal de exemplu. Un șablon este o
+listă "ce iese" cu numele ei; se pot crea oricâte, din ecranul **Setări**, iar
+la crearea unui document se alege din care șablon pornește. Numerotarea
+documentelor este comună tuturor șabloanelor.
