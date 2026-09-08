@@ -7,7 +7,14 @@
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
   "author": {
-    "name": "",
+    "name": "S.C. Largiana Carn S.R.L.",
     "email": ""
+  },
+  "info": {
+    "companyName": "S.C. Largiana Carn S.R.L.",
+    "productName": "Proces Verbal de Transare",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026 S.C. Largiana Carn S.R.L.",
+    "comments": "Aplicație pentru completarea, arhivarea și tipărirea procesului verbal de transare."
   }
 }

@@ -1,0 +1,43 @@
+PROCES VERBAL DE TRANSARE — INSTALARE PE macOS
+==============================================
+
+1. Trage pictograma "Proces Verbal de Transare" peste folderul "Applications"
+   din această fereastră.
+
+2. Deschide folderul Aplicații și pornește aplicația.
+
+
+DACĂ macOS REFUZĂ SĂ DESCHIDĂ APLICAȚIA
+---------------------------------------
+
+Aplicația nu este semnată digital la Apple, așa că la prima pornire macOS
+poate afișa unul dintre mesajele:
+
+  • „Nu poate fi deschisă deoarece provine de la un dezvoltator neidentificat”
+  • „Aplicația este deteriorată și nu poate fi deschisă”
+
+Ambele sunt normale și NU înseamnă că aplicația are o problemă.
+
+Soluția (o singură dată, la prima pornire):
+
+  1. Deschide aplicația Terminal
+     (Aplicații → Utilitare → Terminal).
+
+  2. Scrie exact comanda de mai jos și apasă Enter:
+
+     xattr -dr com.apple.quarantine "/Applications/Proces Verbal de Transare.app"
+
+  3. Pornește din nou aplicația din folderul Aplicații.
+
+După acest pas aplicația va porni normal de fiecare dată.
+
+
+UNDE SUNT SALVATE DATELE
+------------------------
+
+Toate procesele verbale sunt păstrate local, pe acest calculator, în:
+
+  ~/Library/Application Support/proces-verbal-transare/data.db
+
+Fișierul rămâne neatins dacă ștergi sau reinstalezi aplicația.
+Pentru o copie de siguranță, salvează acest fișier.

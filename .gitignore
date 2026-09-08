@@ -16,3 +16,6 @@
 # Build artifacts that should not be tracked
 /proces-verbal-transare
 /frontend/package.json.md5
+
+# Instalatoare generate
+/dist

@@ -207,18 +207,24 @@ tfoot td {
   padding: 7px 14px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: var(--panel);
+  background: var(--btn-bg, var(--panel));
   color: var(--text);
   font: inherit;
   cursor: pointer;
 }
 
+/* Fundalul de hover vine dintr-o variabila, nu dintr-o regula proprie fiecarei
+   variante: `.btn:hover` are specificitate (0,2,0) si ar suprascrie fundalul
+   lui `.btn-primary` (0,1,0) fara sa-i schimbe si culoarea textului, lasand
+   text alb pe fundal aproape alb. Variantele isi aleg fundalul prin --btn-bg
+   si --btn-bg-hover, asa ca specificitatea nu mai intra in joc. */
 .btn:hover {
-  background: var(--readonly-bg);
+  background: var(--btn-bg-hover, var(--readonly-bg));
 }
 
 .btn-primary {
-  background: var(--accent);
+  --btn-bg: var(--accent);
+  --btn-bg-hover: var(--accent);
   border-color: var(--accent);
   color: #fff;
 }

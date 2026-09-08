@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>{{.Name}}</string>
+	<string>{{.Info.ProductName}}</string>
 	<key>CFBundleExecutable</key>
 	<string>{{.Name}}</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.wails.proces-verbal-transare</string>
+	<string>ro.largianacarn.proces-verbal-transare</string>
 	<key>CFBundleIconFile</key>
 	<string>iconfile.icns</string>
 	<key>CFBundleVersion</key>
@@ -23,6 +23,6 @@
 	<key>LSMinimumSystemVersion</key>
 	<string>10.13.0</string>
 	<key>NSHumanReadableCopyright</key>
-	<string></string>
+	<string>{{.Info.Copyright}}</string>
 </dict>
 </plist>
