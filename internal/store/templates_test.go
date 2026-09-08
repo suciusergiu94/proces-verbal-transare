@@ -224,6 +224,52 @@ func TestSaveTemplatesDeleteRemovesProductsButKeepsDocuments(t *testing.T) {
 	}
 }
 
+// TestSaveTemplatesRoundTripsProcentDinIntrare guards the SELECT/Scan column
+// order for products: a fractional ProcentDinIntrare must come back exactly
+// as written, through both the insert and the update path, so a swap with
+// pret_cu_tva (also a REAL column) would show up here.
+func TestSaveTemplatesRoundTripsProcentDinIntrare(t *testing.T) {
+	s := newTestStore(t)
+
+	// One inserted row and one updated row, so both SQL paths are covered.
+	tmpl := model.Template{
+		Nume: "Carcasa Vitel",
+		Products: []model.Product{
+			{Denumire: "Pulpa fara os", UM: "Kg", PretCuTVA: 21.9, ProcentDinIntrare: 60.5},
+			{Denumire: "Slanina", UM: "Kg", PretCuTVA: 12, ProcentDinIntrare: 39.5},
+		},
+	}
+	if err := s.SaveTemplates([]model.Template{tmpl}); err != nil {
+		t.Fatalf("SaveTemplates: %v", err)
+	}
+
+	stored, err := s.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	inserted := stored[0]
+	if len(inserted.Products) != 2 {
+		t.Fatalf("len(products) = %d, want 2", len(inserted.Products))
+	}
+	if inserted.Products[0].ProcentDinIntrare != 60.5 || inserted.Products[1].ProcentDinIntrare != 39.5 {
+		t.Fatalf("after insert = %v / %v, want 60.5 / 39.5",
+			inserted.Products[0].ProcentDinIntrare, inserted.Products[1].ProcentDinIntrare)
+	}
+
+	inserted.Products[0].ProcentDinIntrare = 12.345
+	if err := s.SaveTemplates([]model.Template{inserted}); err != nil {
+		t.Fatalf("SaveTemplates (update): %v", err)
+	}
+
+	updated, err := s.GetTemplate(inserted.ID)
+	if err != nil {
+		t.Fatalf("GetTemplate: %v", err)
+	}
+	if updated.Products[0].ProcentDinIntrare != 12.345 {
+		t.Errorf("after update = %v, want 12.345", updated.Products[0].ProcentDinIntrare)
+	}
+}
+
 func TestSaveTemplatesRefusesAnEmptyList(t *testing.T) {
 	s := newTestStore(t)
 
