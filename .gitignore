@@ -19,3 +19,7 @@
 
 # Instalatoare generate
 /dist
+
+# Worktrees si spatiul de lucru al agentilor
+/.claude/worktrees/
+/.superpowers/
