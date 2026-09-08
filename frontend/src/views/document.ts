@@ -8,7 +8,7 @@ import {
   showError,
 } from '../api';
 import type { Document } from '../api';
-import { diferenta, incarcaDescarca, totals, valoare } from '../calc';
+import { diferenta, incarcaDescarca, marjaProfit, totals, valoare } from '../calc';
 import { formatNumber, parseNumber } from '../format';
 import { navigate } from '../router';
 import { escapeHtml } from '../sidebar';
@@ -32,18 +32,6 @@ export async function renderDocumentView(
   let doc: Document;
   let unitate = '';
 
-  // Sticky override flag: once true, nothing in this view rewrites the footer
-  // (Diferență / Suma cu care se încarcă-descarcă) again for the life of the
-  // view. Those two fields are pre-filled from a computation but are
-  // deliberately editable — the paper form is hand-corrected there — so a
-  // saved correction must survive every later edit, not just the initial
-  // paint. Do not "simplify" this into a per-event check (e.g. "is this
-  // input event's target a footer control?"): that only protects the footer
-  // from the keystroke that lands directly on it, and any subsequent edit to
-  // an unrelated field (Gestionar, a row...) would silently recompute and
-  // overwrite the saved correction.
-  let footerOverridden = false;
-
   try {
     const [loaded, settings] = await Promise.all([
       id === undefined ? NewDocumentDraft() : GetDocument(Number(id)),
@@ -57,36 +45,15 @@ export async function renderDocumentView(
     return;
   }
 
-  // A saved document whose stored footer values differ from what the current
-  // rows would compute means the user hand-corrected them; start overridden
-  // so that correction is never silently recomputed away. A brand-new draft
-  // starts un-overridden, since its footer is legitimately still "pre-filled".
-  footerOverridden = doc.id !== 0 && footerDiffersFromComputed();
-
   // Replace any listener left by a previous renderDocumentView invocation on
   // this same outlet (see the comment on documentInputAbort above).
   documentInputAbort?.abort();
   documentInputAbort = new AbortController();
   outlet.addEventListener('input', onInput, { signal: documentInputAbort.signal });
 
-  // A saved document's stored footer values must survive a reload untouched; only a
-  // brand-new draft should have its footer computed from (empty) rows on first render.
-  renderAll(doc.id === 0);
+  renderAll();
 
-  function footerDiffersFromComputed(): boolean {
-    const intrare = totals(doc.intrare);
-    const iesire = totals(doc.iesire);
-    const dif = diferenta(iesire.valoareCuTva, intrare.valoareCuTva);
-    const inc = incarcaDescarca(iesire.valoareCuTva, intrare.valoareCuTva);
-    return (
-      doc.diferentaTip !== dif.tip ||
-      doc.diferentaValoare !== dif.valoare ||
-      doc.incarcaDescarcaTip !== inc.tip ||
-      doc.incarcaDescarcaValoare !== inc.valoare
-    );
-  }
-
-  function renderAll(refreshFooter = true): void {
+  function renderAll(): void {
     outlet.innerHTML = `
       <h1>${doc.id === 0 ? 'Document nou' : `Proces verbal NR ${doc.nr}`}</h1>
 
@@ -120,31 +87,30 @@ export async function renderDocumentView(
       </div>
 
       <h2>Ce iese</h2>
+      <div class="marja">
+        <label for="f-marja">Marja de profit</label>
+        <input id="f-marja" class="num" readonly tabindex="-1" />
+      </div>
       ${iesireTable()}
 
-      <div class="footer-grid">
+      <div class="footer-grid footer-computed">
         <div class="field">
-          <label for="f-dif-tip">Diferență</label>
+          <label for="f-dif-val">Diferență</label>
           <div class="inline-field">
-            <select id="f-dif-tip">
-              <option value=""></option>
-              <option value="plus">plus</option>
-              <option value="minus">minus</option>
-            </select>
-            <input id="f-dif-val" class="num" value="${formatNumber(doc.diferentaValoare)}" />
+            <input id="f-dif-tip" class="tip" readonly tabindex="-1" />
+            <input id="f-dif-val" class="num" readonly tabindex="-1" />
           </div>
         </div>
         <div class="field">
-          <label for="f-id-tip">Suma cu care se încarcă/descarcă gestiunea</label>
+          <label for="f-id-val">Suma cu care se încarcă/descarcă gestiunea</label>
           <div class="inline-field">
-            <select id="f-id-tip">
-              <option value=""></option>
-              <option value="incarca">încarcă</option>
-              <option value="descarca">descarcă</option>
-            </select>
-            <input id="f-id-val" class="num" value="${formatNumber(doc.incarcaDescarcaValoare)}" />
+            <input id="f-id-tip" class="tip" readonly tabindex="-1" />
+            <input id="f-id-val" class="num" readonly tabindex="-1" />
           </div>
         </div>
+      </div>
+
+      <div class="footer-grid footer-semnaturi">
         <div class="field">
           <label for="f-gestionar">Gestionar</label>
           <input id="f-gestionar" value="${escapeHtml(doc.gestionar)}" />
@@ -166,11 +132,8 @@ export async function renderDocumentView(
       </div>
     `;
 
-    (outlet.querySelector('#f-dif-tip') as HTMLSelectElement).value = doc.diferentaTip;
-    (outlet.querySelector('#f-id-tip') as HTMLSelectElement).value = doc.incarcaDescarcaTip;
-
     wireEvents();
-    recompute(refreshFooter);
+    recompute();
   }
 
   function intrareTable(): string {
@@ -289,24 +252,9 @@ export async function renderDocumentView(
     if (deleteBtn) deleteBtn.addEventListener('click', () => void onDelete());
   }
 
-  function onInput(event: Event): void {
-    const target = event.target as HTMLElement;
-
-    // Typing into any of the four footer controls marks the override sticky
-    // (see the footerOverridden comment above) for the rest of the view's
-    // lifetime, not just for this one event.
-    if (isFooterControl(target)) {
-      footerOverridden = true;
-    }
-
+  function onInput(): void {
     readForm();
-    recompute(true);
-  }
-
-  function isFooterControl(el: HTMLElement): boolean {
-    return (
-      el.id === 'f-dif-val' || el.id === 'f-dif-tip' || el.id === 'f-id-val' || el.id === 'f-id-tip'
-    );
+    recompute();
   }
 
   /** Copies every input's current value back into doc. */
@@ -315,10 +263,8 @@ export async function renderDocumentView(
     doc.nr = Number(value('#f-nr')) || 0;
     doc.data = value('#f-data');
     doc.documentReferinta = value('#f-referinta');
-    doc.diferentaTip = value('#f-dif-tip');
-    doc.diferentaValoare = parseNumber(value('#f-dif-val'));
-    doc.incarcaDescarcaTip = value('#f-id-tip');
-    doc.incarcaDescarcaValoare = parseNumber(value('#f-id-val'));
+    // Diferență and "Suma cu care se încarcă/descarcă" are derived, never
+    // typed: recompute() is what writes them onto doc (see recompute).
     doc.gestionar = value('#f-gestionar');
     doc.calculator = value('#f-calculator');
     doc.vizatCompartimentProductie = value('#f-vizat');
@@ -336,8 +282,8 @@ export async function renderDocumentView(
     });
   }
 
-  /** Refreshes the computed cells, and the footer unless it has been overridden. */
-  function recompute(refreshFooter = true): void {
+  /** Refreshes every derived cell: row values, table totals and the footer. */
+  function recompute(): void {
     outlet.querySelectorAll<HTMLTableRowElement>('tr[data-table]').forEach((tr) => {
       const index = Number(tr.dataset.index);
       const row = tr.dataset.table === 'intrare' ? doc.intrare[index] : doc.iesire[index];
@@ -355,22 +301,49 @@ export async function renderDocumentView(
     setTotal('iesire-faraTva', iesire.valoareFaraTva);
     setTotal('iesire-cuTva', iesire.valoareCuTva);
 
-    // footerOverridden is checked here (not just at the onInput call site) so
-    // that every caller of recompute — the initial render, add/remove row,
-    // and onInput — is covered by one gate instead of each needing to know
-    // about the override.
-    if (!refreshFooter || footerOverridden) return;
+    // Adaos pe cost: what the butchering gained, as a percentage of what it
+    // consumed. Blank while nothing has gone in yet, rather than a division
+    // by zero (see marjaProfit).
+    const marja = marjaProfit(iesire.valoareCuTva, intrare.valoareCuTva);
+    setField('#f-marja', marja === undefined ? '' : `${formatNumber(marja)} %`);
 
+    // The footer follows the two tables: a butchering that yields more than
+    // it consumed is a "plus" that loads (încarcă) the gestiune, the reverse
+    // is a "minus" that unloads (descarcă) it. Both the sign and the amount
+    // are derived here — they are never entered by hand — so a saved
+    // document's footer always agrees with the rows it was saved with, and
+    // with what internal/calc re-derives for the PDF.
     const dif = diferenta(iesire.valoareCuTva, intrare.valoareCuTva);
     const inc = incarcaDescarca(iesire.valoareCuTva, intrare.valoareCuTva);
     doc.diferentaTip = dif.tip;
     doc.diferentaValoare = dif.valoare;
     doc.incarcaDescarcaTip = inc.tip;
     doc.incarcaDescarcaValoare = inc.valoare;
-    (outlet.querySelector('#f-dif-tip') as HTMLSelectElement).value = dif.tip;
-    (outlet.querySelector('#f-dif-val') as HTMLInputElement).value = formatNumber(dif.valoare);
-    (outlet.querySelector('#f-id-tip') as HTMLSelectElement).value = inc.tip;
-    (outlet.querySelector('#f-id-val') as HTMLInputElement).value = formatNumber(inc.valoare);
+    setField('#f-dif-tip', tipLabel(dif.tip));
+    setField('#f-dif-val', formatNumber(dif.valoare));
+    setField('#f-id-tip', tipLabel(inc.tip));
+    setField('#f-id-val', formatNumber(inc.valoare));
+  }
+
+  /** The Romanian wording the printed form uses for a computed tip. */
+  function tipLabel(tip: string): string {
+    switch (tip) {
+      case 'plus':
+        return 'plus';
+      case 'minus':
+        return 'minus';
+      case 'incarca':
+        return 'încarcă';
+      case 'descarca':
+        return 'descarcă';
+      default:
+        return '';
+    }
+  }
+
+  function setField(selector: string, text: string): void {
+    const el = outlet.querySelector<HTMLInputElement>(selector);
+    if (el) el.value = text;
   }
 
   /**
@@ -381,6 +354,9 @@ export async function renderDocumentView(
    */
   async function saveCurrentForm(): Promise<boolean> {
     readForm();
+    // readForm no longer touches the derived footer, so refresh it here:
+    // what gets persisted must match the rows being persisted with it.
+    recompute();
     if (doc.nr <= 0) {
       window.alert('Completați numărul documentului (NR).');
       return false;

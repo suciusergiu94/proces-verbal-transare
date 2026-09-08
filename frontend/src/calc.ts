@@ -64,3 +64,19 @@ export function incarcaDescarca(
   if (tip === 'minus') return { tip: 'descarca', valoare: value };
   return { tip: '', valoare: 0 };
 }
+
+/**
+ * The profit margin of the butchering, as a percentage of what went in:
+ * (total iesire − total intrare) / total intrare × 100, both "cu TVA" so the
+ * figure agrees with Diferență. Negative when the butchering lost value.
+ *
+ * Returns undefined — not Infinity or NaN — when nothing went in, since a
+ * margin on a zero cost has no meaning; callers render that as a blank.
+ *
+ * Unlike the rest of this module this has no counterpart in internal/calc: it
+ * is a working figure shown on screen only, never stored and never printed.
+ */
+export function marjaProfit(iesireCuTva: number, intrareCuTva: number): number | undefined {
+  if (intrareCuTva === 0) return undefined;
+  return round2(((iesireCuTva - intrareCuTva) / intrareCuTva) * 100);
+}

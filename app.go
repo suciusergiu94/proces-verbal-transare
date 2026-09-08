@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"proces-verbal-transare/internal/appdir"
+	"proces-verbal-transare/internal/calc"
 	"proces-verbal-transare/internal/model"
 	"proces-verbal-transare/internal/pdfdoc"
 	"proces-verbal-transare/internal/store"
@@ -139,6 +140,16 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 // atomically: there is no window where a save can report failure for a
 // document that was actually persisted.
 func (a *App) SaveDocument(doc model.Document) (model.Document, error) {
+	// Diferenta and "suma cu care se incarca/descarca" are derived from the two
+	// tables, never entered by hand, so they are re-derived here rather than
+	// trusted from the frontend. That keeps a stored document self-consistent
+	// even for rows saved by an older build, and means the PDF always prints
+	// the same numbers the form showed.
+	intrare := calc.TotalsIntrare(doc.Intrare)
+	iesire := calc.TotalsIesire(doc.Iesire)
+	doc.DiferentaTip, doc.DiferentaValoare = calc.Diferenta(iesire.ValoareCuTVA, intrare.ValoareCuTVA)
+	doc.IncarcaDescarcaTip, doc.IncarcaDescarcaValoare = calc.IncarcaDescarca(iesire.ValoareCuTVA, intrare.ValoareCuTVA)
+
 	saved, err := a.store.SaveDocument(doc)
 	if err != nil {
 		return model.Document{}, err

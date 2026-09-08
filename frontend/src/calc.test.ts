@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diferenta, incarcaDescarca, round2, totals, valoare } from './calc';
+import { diferenta, incarcaDescarca, marjaProfit, round2, totals, valoare } from './calc';
 
 describe('round2', () => {
   it('rounds half away from zero', () => {
@@ -50,5 +50,25 @@ describe('incarcaDescarca', () => {
     expect(incarcaDescarca(2300.67, 1000)).toEqual({ tip: 'incarca', valoare: 1300.67 });
     expect(incarcaDescarca(1000, 2300.67)).toEqual({ tip: 'descarca', valoare: 1300.67 });
     expect(incarcaDescarca(500, 500)).toEqual({ tip: '', valoare: 0 });
+  });
+});
+
+describe('marjaProfit', () => {
+  it('is the surplus as a percentage of what went in', () => {
+    expect(marjaProfit(21311, 18000)).toBe(18.39);
+    expect(marjaProfit(1200, 1000)).toBe(20);
+  });
+
+  it('is negative when the butchering lost value', () => {
+    expect(marjaProfit(900, 1000)).toBe(-10);
+  });
+
+  it('is zero when the two tables balance', () => {
+    expect(marjaProfit(1000, 1000)).toBe(0);
+  });
+
+  it('is undefined rather than infinite when nothing went in', () => {
+    expect(marjaProfit(21311, 0)).toBeUndefined();
+    expect(marjaProfit(0, 0)).toBeUndefined();
   });
 });
