@@ -3,13 +3,13 @@ import {
   ExportPDF,
   GetDocument,
   GetSettings,
-  ListProducts,
+  ListTemplates,
   NewDocumentDraft,
   SaveDocument,
-  SaveProducts,
+  SaveTemplates,
   showError,
 } from '../api';
-import type { Document, Product } from '../api';
+import type { Document, Template } from '../api';
 import {
   ajusteazaMarja,
   cantitatiDinProcente,
@@ -18,7 +18,6 @@ import {
   marjaProfit,
   pretCuTvaDin,
   pretFaraTvaDin,
-  procenteDinCantitati,
   totals,
   valoare,
 } from '../calc';
@@ -27,6 +26,7 @@ import { formatDateRO, formatNumber, parseDateRO, parseNumber } from '../format'
 import { navigate } from '../router';
 import { showToast } from '../toast';
 import { escapeHtml } from '../sidebar';
+import { DRAFT_PREFIX, draftHash, templatesCuProcenteNoi } from '../templates';
 
 // documentInputAbort holds the AbortController for the currently-attached
 // `input` listener. renderDocumentView runs afresh on every hashchange *and*
@@ -48,16 +48,20 @@ export async function renderDocumentView(
   outlet: HTMLElement,
   id: string | undefined,
   refreshSidebar: () => Promise<void>,
-  // Unused for now — Task 8 gives this the id of the template a new draft is
-  // created from.
-  templateId?: number,
+  templateId: number | undefined,
 ): Promise<void> {
   let doc: Document;
   let unitate = '';
   // The rate new rows start from. Rows already on the document keep their own.
   let cotaImplicita = 0;
+  // The template this document was made from, and its name for the header. A
+  // document whose template has since been deleted has neither.
+  let templates: Template[] = [];
+  let templateNume = '';
   // Each product's share of the carcass, by product id. The "ce iese"
-  // quantities are filled from these whenever the input quantity changes.
+  // quantities are filled from these whenever the input quantity changes. It
+  // is empty for a document whose template is gone, which is what turns the
+  // automatic fill off.
   let procente = new Map<number, number>();
   // Set once the +/- buttons have actually moved the split, which is what puts
   // "Salvează procentele noi" on screen. Nothing else offers to rewrite the
@@ -66,15 +70,34 @@ export async function renderDocumentView(
   let marjaNudged = false;
 
   try {
-    const [loaded, settings, products] = await Promise.all([
-      id === undefined ? NewDocumentDraft() : GetDocument(Number(id)),
-      GetSettings(),
-      ListProducts(),
-    ]);
-    doc = loaded;
+    const [settings, loadedTemplates] = await Promise.all([GetSettings(), ListTemplates()]);
     unitate = settings.unitateNume;
     cotaImplicita = settings.cotaTva;
-    procente = new Map(products.map((p: Product) => [p.id, p.procentDinIntrare]));
+    templates = loadedTemplates;
+
+    if (id !== undefined) {
+      doc = await GetDocument(Number(id));
+    } else {
+      // A draft route with no template on it is a stale hash or the fresh-launch
+      // fallback. There is always at least one template, so send it to the
+      // first rather than failing at the user.
+      const wanted = templateId ?? templates[0]?.id;
+      if (wanted === undefined) {
+        outlet.innerHTML = '<p class="empty">Nu există niciun șablon. Creați unul din Setări.</p>';
+        return;
+      }
+      if (templateId === undefined) {
+        navigate(draftHash(wanted));
+        return;
+      }
+      doc = await NewDocumentDraft(wanted);
+    }
+
+    const template = templates.find((t) => t.id === doc.templateId);
+    if (template !== undefined) {
+      templateNume = template.nume;
+      procente = new Map(template.products.map((p) => [p.id, p.procentDinIntrare]));
+    }
   } catch (err) {
     showError('Nu s-a putut încărca documentul', err);
     outlet.innerHTML = '<p class="empty">Documentul nu a putut fi încărcat.</p>';
@@ -107,6 +130,10 @@ export async function renderDocumentView(
           <input id="f-gestiune" value="${escapeHtml(doc.gestiune)}" />
         </div>
         <div class="field">
+          <label for="f-sablon">Șablon</label>
+          <input id="f-sablon" value="${escapeHtml(templateNume || 'șters')}" readonly />
+        </div>
+        <div class="field">
           <label for="f-nr">NR</label>
           <input id="f-nr" class="num" type="number" min="1" step="1" value="${doc.nr}" />
         </div>
@@ -134,20 +161,13 @@ export async function renderDocumentView(
       </div>
 
       <h2>Ce iese</h2>
-      <div class="marja">
-        <label for="f-marja">Marja de profit</label>
-        <input id="f-marja" class="num" readonly tabindex="-1" />
-        <div class="marja-pas">
-          <button class="btn-icon" id="marja-minus" type="button" title="Scade marja cu ${PAS_MARJA} % redistribuind cantitățile">−</button>
-          <button class="btn-icon" id="marja-plus" type="button" title="Crește marja cu ${PAS_MARJA} % redistribuind cantitățile">+</button>
-        </div>
-        <button
-          class="btn marja-salveaza"
-          id="save-procente"
-          type="button"
-          ${marjaNudged ? '' : 'hidden'}
-        >Salvează procentele noi</button>
-      </div>
+      ${
+        procente.size === 0
+          ? `<p class="empty">Șablonul acestui document a fost șters; cantitățile nu se
+             mai completează automat din cantitatea de la "ce intră".</p>`
+          : ''
+      }
+      ${procente.size === 0 ? '' : marjaRow()}
       ${iesireTable()}
 
       <div class="footer-grid footer-computed">
@@ -191,6 +211,25 @@ export async function renderDocumentView(
 
     wireEvents();
     recompute();
+  }
+
+  /** The margin controls: nudging the split, and saving it back to the template. */
+  function marjaRow(): string {
+    return `
+      <div class="marja">
+        <label for="f-marja">Marja de profit</label>
+        <input id="f-marja" class="num" readonly tabindex="-1" />
+        <div class="marja-pas">
+          <button class="btn-icon" id="marja-minus" type="button" title="Scade marja cu ${PAS_MARJA} % redistribuind cantitățile">−</button>
+          <button class="btn-icon" id="marja-plus" type="button" title="Crește marja cu ${PAS_MARJA} % redistribuind cantitățile">+</button>
+        </div>
+        <button
+          class="btn marja-salveaza"
+          id="save-procente"
+          type="button"
+          ${marjaNudged ? '' : 'hidden'}
+        >Salvează procentele noi</button>
+      </div>`;
   }
 
   function intrareTable(): string {
@@ -305,12 +344,10 @@ export async function renderDocumentView(
       });
     });
 
-    outlet
-      .querySelector('#marja-plus')!
-      .addEventListener('click', () => stepMarja(PAS_MARJA));
-    outlet
-      .querySelector('#marja-minus')!
-      .addEventListener('click', () => stepMarja(-PAS_MARJA));
+    const marjaPlus = outlet.querySelector('#marja-plus');
+    if (marjaPlus) marjaPlus.addEventListener('click', () => stepMarja(PAS_MARJA));
+    const marjaMinus = outlet.querySelector('#marja-minus');
+    if (marjaMinus) marjaMinus.addEventListener('click', () => stepMarja(-PAS_MARJA));
 
     // Tidies "3.9.2026" into "03/09/2026" once the user leaves the field, so
     // the form always shows the date in the shape the printed document uses.
@@ -325,9 +362,8 @@ export async function renderDocumentView(
     const printBtn = outlet.querySelector('#print');
     if (printBtn) printBtn.addEventListener('click', () => void onPrint());
 
-    outlet
-      .querySelector('#save-procente')!
-      .addEventListener('click', () => void onSaveProcente());
+    const saveProcenteBtn = outlet.querySelector('#save-procente');
+    if (saveProcenteBtn) saveProcenteBtn.addEventListener('click', () => void onSaveProcente());
 
     const deleteBtn = outlet.querySelector('#delete');
     if (deleteBtn) deleteBtn.addEventListener('click', () => void onDelete());
@@ -367,24 +403,20 @@ export async function renderDocumentView(
   }
 
   /**
-   * Stores the split the user nudged into as the product list's carcass
-   * ratios, so every later document opens on it — the same column Setări
-   * shows and edits by hand.
-   *
-   * The ratios are worked out per product rather than per row: a row whose
-   * product has since been deleted from Setări cannot carry a share, and must
-   * not take one with it and leave the column short of the 100% Setări
-   * insists on. A product that this document does not produce at all goes to
-   * zero for the same reason — the column being written is the whole of it,
-   * not a patch over what is stored.
+   * Stores the split the user nudged into as this document's template's carcass
+   * ratios, so every later document from that template opens on it — the same
+   * column Setări shows and edits by hand. Only this document's template is
+   * touched; the others go back exactly as they came.
    */
   async function onSaveProcente(): Promise<void> {
     readForm();
-    let products: Product[];
+    if (doc.templateId === undefined || doc.templateId === null) return;
+
+    let stored: Template[];
     try {
-      products = await ListProducts();
+      stored = await ListTemplates();
     } catch (err) {
-      showError('Lista de produse nu a putut fi citită', err);
+      showError('Lista de șabloane nu a putut fi citită', err);
       return;
     }
 
@@ -396,28 +428,30 @@ export async function renderDocumentView(
         (cantitatiPerProdus.get(row.productId) ?? 0) + row.cantitate,
       );
     });
-    const noi = procenteDinCantitati(products.map((p) => cantitatiPerProdus.get(p.id) ?? 0));
-    if (noi === undefined) {
+
+    const actualizate = templatesCuProcenteNoi(stored, doc.templateId, cantitatiPerProdus);
+    if (actualizate === undefined) {
       showToast('Nu există cantități din care să se calculeze procentele.');
       return;
     }
 
+    const nume = stored.find((t) => t.id === doc.templateId)?.nume ?? '';
     if (
       !(await showConfirm(
-        'Salvați procentele noi? Procentele din Setări vor fi înlocuite cu cele ' +
-          'rezultate din cantitățile de pe acest document.',
+        `Salvați procentele noi? Procentele șablonului „${nume}” din Setări vor fi ` +
+          'înlocuite cu cele rezultate din cantitățile de pe acest document.',
       ))
     ) {
       return;
     }
 
     try {
-      const actualizate = products.map((p, i) => ({ ...p, procentDinIntrare: noi[i] }));
-      await SaveProducts(actualizate);
+      await SaveTemplates(actualizate);
       // The form fills "ce iese" from these whenever the carcass weight
       // changes, so the in-memory copy has to move with the stored one or the
       // next keystroke would undo what was just saved.
-      procente = new Map(actualizate.map((p) => [p.id, p.procentDinIntrare]));
+      const salvat = actualizate.find((t) => t.id === doc.templateId);
+      procente = new Map((salvat?.products ?? []).map((p) => [p.id, p.procentDinIntrare]));
       marjaNudged = false;
       syncSalvareProcente();
       showToast('Procentele au fost salvate!');
@@ -672,7 +706,7 @@ export async function renderDocumentView(
     try {
       await DeleteDocument(doc.id);
       await refreshSidebar();
-      navigate('#/document/new');
+      navigate(doc.templateId == null ? DRAFT_PREFIX : draftHash(doc.templateId));
     } catch (err) {
       showError('Documentul nu a putut fi șters', err);
     }
