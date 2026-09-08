@@ -9,6 +9,7 @@ import {
 } from '../api';
 import type { Document } from '../api';
 import {
+  ajusteazaMarja,
   diferenta,
   incarcaDescarca,
   marjaProfit,
@@ -31,6 +32,11 @@ import { escapeHtml } from '../sidebar';
 // handler attached when the user navigates to an unrelated view such as
 // Setări, where it throws on the first keystroke.
 let documentInputAbort: AbortController | undefined;
+
+// How much one click of the +/- buttons beside "Marja de profit" is worth, in
+// percentage points. Small on purpose: the buttons nudge the split between
+// products, they do not redesign the butchering.
+const PAS_MARJA = 0.25;
 
 /** Renders the document form. Pass no id for a new document. */
 export async function renderDocumentView(
@@ -102,6 +108,10 @@ export async function renderDocumentView(
       <div class="marja">
         <label for="f-marja">Marja de profit</label>
         <input id="f-marja" class="num" readonly tabindex="-1" />
+        <div class="marja-pas">
+          <button class="btn-icon" id="marja-minus" type="button" title="Scade marja cu ${PAS_MARJA} % redistribuind cantitățile">−</button>
+          <button class="btn-icon" id="marja-plus" type="button" title="Crește marja cu ${PAS_MARJA} % redistribuind cantitățile">+</button>
+        </div>
       </div>
       ${iesireTable()}
 
@@ -258,6 +268,13 @@ export async function renderDocumentView(
       });
     });
 
+    outlet
+      .querySelector('#marja-plus')!
+      .addEventListener('click', () => stepMarja(PAS_MARJA));
+    outlet
+      .querySelector('#marja-minus')!
+      .addEventListener('click', () => stepMarja(-PAS_MARJA));
+
     outlet.querySelector('#save')!.addEventListener('click', () => void onSave());
 
     const printBtn = outlet.querySelector('#print') as HTMLButtonElement | null;
@@ -267,6 +284,32 @@ export async function renderDocumentView(
 
     const deleteBtn = outlet.querySelector('#delete');
     if (deleteBtn) deleteBtn.addEventListener('click', () => void onDelete());
+  }
+
+  /**
+   * Nudges the margin by `delta` percentage points by redistributing the "ce
+   * iese" quantities — see ajusteazaMarja for how the shift is spread. The
+   * total quantity is unchanged; only the split between products moves.
+   *
+   * The quantity inputs are written in place rather than through renderAll(),
+   * so the user keeps their scroll position and can click the button several
+   * times in a row while watching the same rows change.
+   */
+  function stepMarja(delta: number): void {
+    readForm();
+    const propunere = ajusteazaMarja(doc.iesire, totals(doc.intrare).valoareCuTva, delta);
+    if (propunere === undefined) {
+      showToast('Marja nu poate fi ajustată din cantități.');
+      return;
+    }
+    propunere.forEach((cantitate, i) => {
+      doc.iesire[i].cantitate = cantitate;
+      const tr = outlet.querySelector<HTMLTableRowElement>(
+        `tr[data-table="iesire"][data-index="${i}"]`,
+      );
+      if (tr) setRowField(tr, 'cantitate', cantitate);
+    });
+    recompute();
   }
 
   function onInput(event: Event): void {

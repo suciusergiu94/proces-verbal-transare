@@ -263,6 +263,34 @@ tfoot td {
   width: 110px;
 }
 
+/* The two nudge buttons sit flush against each other beside the margin, so
+   they read as one control for stepping a single value rather than two
+   unrelated actions. */
+.marja-pas {
+  display: flex;
+}
+
+.marja-pas .btn-icon {
+  width: 26px;
+  padding: 2px 0;
+  font-size: 14px;
+  line-height: 18px;
+  text-align: center;
+}
+
+.marja-pas .btn-icon:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.marja-pas .btn-icon:last-child {
+  border-radius: 0 4px 4px 0;
+  border-left: none;
+}
+
+.marja-pas .btn-icon:hover {
+  background: var(--readonly-bg);
+}
+
 /* The footer is two fixed rows, not a reflowing auto-fit grid: the two
    computed fields (Diferență, Suma cu care se încarcă/descarcă) stay together
    on their own row, the three signature fields on the next. Bottom-aligning

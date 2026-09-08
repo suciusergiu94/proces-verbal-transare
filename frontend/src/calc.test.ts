@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ajusteazaMarja,
   diferenta,
   incarcaDescarca,
   marjaProfit,
@@ -9,6 +10,7 @@ import {
   totals,
   valoare,
 } from './calc';
+import type { RowLike } from './calc';
 
 describe('round2', () => {
   it('rounds half away from zero', () => {
@@ -125,5 +127,149 @@ describe('pretFaraTvaDin', () => {
   it('gives up on a rate of -100% or lower, which would divide by zero', () => {
     expect(pretFaraTvaDin(21.9, -100)).toBeUndefined();
     expect(pretFaraTvaDin(21.9, -150)).toBeUndefined();
+  });
+});
+
+describe('ajusteazaMarja', () => {
+  // A butchering shaped like the real form: a few products at different
+  // prices, all of them produced, against a fixed cost of what went in.
+  const rows = (): RowLike[] => [
+    { cantitate: 30, pretFaraTva: 22.52, pretCuTva: 25 },
+    { cantitate: 20, pretFaraTva: 13.51, pretCuTva: 15 },
+    { cantitate: 10, pretFaraTva: 9.01, pretCuTva: 10 },
+  ];
+  const INTRARE = 1000;
+
+  /** The margin the form would show for these quantities. */
+  const marjaOf = (base: RowLike[], cantitati: number[]): number | undefined =>
+    marjaProfit(
+      totals(base.map((row, i) => ({ ...row, cantitate: cantitati[i] }))).valoareCuTva,
+      INTRARE,
+    );
+
+  const totalOf = (cantitati: number[]): number =>
+    round2(cantitati.reduce((sum, q) => sum + q, 0));
+
+  it('raises the margin by at least 0.25 of a percent', () => {
+    const base = rows();
+    const before = marjaOf(base, [30, 20, 10])!;
+    const after = ajusteazaMarja(base, INTRARE, 0.25)!;
+    expect(after).toBeDefined();
+    expect(marjaOf(base, after)!).toBeGreaterThanOrEqual(before + 0.25);
+  });
+
+  it('lowers the margin by at least 0.25 of a percent', () => {
+    const base = rows();
+    const before = marjaOf(base, [30, 20, 10])!;
+    const after = ajusteazaMarja(base, INTRARE, -0.25)!;
+    expect(marjaOf(base, after)!).toBeLessThanOrEqual(before - 0.25);
+  });
+
+  it('does not overshoot: one step moves the margin far less than a whole percent', () => {
+    const base = rows();
+    const before = marjaOf(base, [30, 20, 10])!;
+    const after = ajusteazaMarja(base, INTRARE, 0.25)!;
+    expect(marjaOf(base, after)!).toBeLessThan(before + 1);
+  });
+
+  it('keeps the total quantity unchanged — meat is only redistributed', () => {
+    const after = ajusteazaMarja(rows(), INTRARE, 0.25)!;
+    expect(totalOf(after)).toBe(60);
+  });
+
+  it('keeps the total unchanged over many steps, with no drift', () => {
+    const base = rows();
+    let cantitati = [30, 20, 10];
+    for (let i = 0; i < 8; i++) {
+      const next = ajusteazaMarja(
+        base.map((row, j) => ({ ...row, cantitate: cantitati[j] })),
+        INTRARE,
+        0.25,
+      );
+      if (next === undefined) break;
+      cantitati = next;
+      expect(totalOf(cantitati)).toBe(60);
+    }
+  });
+
+  it('moves every product a little rather than emptying the cheapest one', () => {
+    const base = rows();
+    const after = ajusteazaMarja(base, INTRARE, 0.25)!;
+    // Above the weighted average price (20 lei) goes up, below it goes down.
+    expect(after[0]).toBeGreaterThan(30);
+    expect(after[1]).toBeLessThan(20);
+    expect(after[2]).toBeLessThan(10);
+    // And each change stays small — no wholesale transfer between two rows.
+    after.forEach((q, i) => {
+      expect(Math.abs(q - base[i].cantitate)).toBeLessThan(base[i].cantitate * 0.1);
+    });
+  });
+
+  it('rounds quantities to two decimals', () => {
+    const after = ajusteazaMarja(rows(), INTRARE, 0.25)!;
+    after.forEach((q) => expect(round2(q)).toBe(q));
+  });
+
+  it('leaves a product that was not produced at zero', () => {
+    const base: RowLike[] = [
+      ...rows(),
+      { cantitate: 0, pretFaraTva: 45.05, pretCuTva: 50 },
+    ];
+    const after = ajusteazaMarja(base, INTRARE, 0.25)!;
+    expect(after[3]).toBe(0);
+  });
+
+  it('never produces a negative quantity', () => {
+    const base = rows();
+    let cantitati = [30, 20, 10];
+    for (let i = 0; i < 200; i++) {
+      const next = ajusteazaMarja(
+        base.map((row, j) => ({ ...row, cantitate: cantitati[j] })),
+        INTRARE,
+        -0.25,
+      );
+      if (next === undefined) break;
+      cantitati = next;
+      cantitati.forEach((q) => expect(q).toBeGreaterThanOrEqual(0));
+    }
+  });
+
+  it('gives up rather than exhausting a product to reach the target', () => {
+    // Only 0.01 kg of the cheap product is left to move, nowhere near the
+    // 0.25 percent a step must be worth.
+    const base: RowLike[] = [
+      { cantitate: 40, pretFaraTva: 22.52, pretCuTva: 25 },
+      { cantitate: 0.01, pretFaraTva: 0.9, pretCuTva: 1 },
+    ];
+    expect(ajusteazaMarja(base, INTRARE, 0.25)).toBeUndefined();
+  });
+
+  it('gives up when every product carries the same price, leaving no mix to shift', () => {
+    const base: RowLike[] = [
+      { cantitate: 30, pretFaraTva: 22.52, pretCuTva: 25 },
+      { cantitate: 20, pretFaraTva: 22.52, pretCuTva: 25 },
+    ];
+    expect(ajusteazaMarja(base, INTRARE, 0.25)).toBeUndefined();
+  });
+
+  it('gives up when there is a single product, since one row is its own average', () => {
+    const base: RowLike[] = [{ cantitate: 30, pretFaraTva: 22.52, pretCuTva: 25 }];
+    expect(ajusteazaMarja(base, INTRARE, 0.25)).toBeUndefined();
+  });
+
+  it('gives up when nothing went in, since the margin itself is undefined', () => {
+    expect(ajusteazaMarja(rows(), 0, 0.25)).toBeUndefined();
+  });
+
+  it('gives up when nothing has come out yet', () => {
+    const base: RowLike[] = [
+      { cantitate: 0, pretFaraTva: 22.52, pretCuTva: 25 },
+      { cantitate: 0, pretFaraTva: 13.51, pretCuTva: 15 },
+    ];
+    expect(ajusteazaMarja(base, INTRARE, 0.25)).toBeUndefined();
+  });
+
+  it('gives up on an empty table', () => {
+    expect(ajusteazaMarja([], INTRARE, 0.25)).toBeUndefined();
   });
 });
