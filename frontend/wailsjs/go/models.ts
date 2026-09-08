@@ -9,6 +9,7 @@ export namespace model {
 	    pretCuTva: number;
 	    cantitate: number;
 	    pretFaraTva: number;
+	    cotaTva: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new IesireRow(source);
@@ -24,6 +25,7 @@ export namespace model {
 	        this.pretCuTva = source["pretCuTva"];
 	        this.cantitate = source["cantitate"];
 	        this.pretFaraTva = source["pretFaraTva"];
+	        this.cotaTva = source["cotaTva"];
 	    }
 	}
 	export class IntrareRow {
@@ -34,6 +36,7 @@ export namespace model {
 	    cantitate: number;
 	    pretFaraTva: number;
 	    pretCuTva: number;
+	    cotaTva: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new IntrareRow(source);
@@ -48,6 +51,7 @@ export namespace model {
 	        this.cantitate = source["cantitate"];
 	        this.pretFaraTva = source["pretFaraTva"];
 	        this.pretCuTva = source["pretCuTva"];
+	        this.cotaTva = source["cotaTva"];
 	    }
 	}
 	export class Document {
@@ -153,6 +157,7 @@ export namespace model {
 	export class Settings {
 	    unitateNume: string;
 	    nextNr: number;
+	    cotaTva: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -162,6 +167,7 @@ export namespace model {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.unitateNume = source["unitateNume"];
 	        this.nextNr = source["nextNr"];
+	        this.cotaTva = source["cotaTva"];
 	    }
 	}
 

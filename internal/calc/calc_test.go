@@ -115,3 +115,31 @@ func TestIncarcaDescarca(t *testing.T) {
 		t.Errorf("IncarcaDescarca(500, 500) = %q, %v; want \"\", 0", tip, val)
 	}
 }
+
+func TestPretFaraTVA(t *testing.T) {
+	tests := []struct {
+		name      string
+		pretCuTVA float64
+		cota      float64
+		want      float64
+		wantOK    bool
+	}{
+		{"strips the rate", 111, 11, 100, true},
+		{"rounds to two decimals", 21.9, 11, 19.73, true},
+		{"a zero rate leaves the price alone", 21.9, 0, 21.9, true},
+		{"a zero price stays zero", 0, 11, 0, true},
+		{"a rate of -100% has no inverse", 21.9, -100, 0, false},
+		{"a rate below -100% has no inverse", 21.9, -150, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := PretFaraTVA(tt.pretCuTVA, tt.cota)
+			if ok != tt.wantOK {
+				t.Fatalf("ok = %v, want %v", ok, tt.wantOK)
+			}
+			if ok && got != tt.want {
+				t.Errorf("PretFaraTVA(%v, %v) = %v, want %v", tt.pretCuTVA, tt.cota, got, tt.want)
+			}
+		})
+	}
+}

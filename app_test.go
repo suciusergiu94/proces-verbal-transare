@@ -144,3 +144,63 @@ func TestSaveDocumentUpdateDoesNotBumpNextNr(t *testing.T) {
 		t.Errorf("NextNr = %d after re-saving an existing document, want 11", after.NextNr)
 	}
 }
+
+func TestNewDocumentDraftAppliesTheDefaultTvaRate(t *testing.T) {
+	a := newTestApp(t)
+
+	draft, err := a.NewDocumentDraft()
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	if draft.Intrare[0].CotaTVA != 11 {
+		t.Errorf("draft.Intrare[0].CotaTVA = %v, want 11 (the settings default)", draft.Intrare[0].CotaTVA)
+	}
+	if draft.Iesire[0].CotaTVA != 11 {
+		t.Errorf("draft.Iesire[0].CotaTVA = %v, want 11 (the settings default)", draft.Iesire[0].CotaTVA)
+	}
+	// Pulpa fara os is seeded at 21.9 with TVA; at 11% that is 19.73 without.
+	if draft.Iesire[0].PretFaraTVA != 19.73 {
+		t.Errorf("draft.Iesire[0].PretFaraTVA = %v, want 19.73 derived from 21.9 at 11%%", draft.Iesire[0].PretFaraTVA)
+	}
+}
+
+func TestNewDocumentDraftUsesTheConfiguredTvaRate(t *testing.T) {
+	a := newTestApp(t)
+
+	if err := a.SaveSettings(model.Settings{UnitateNume: "X", NextNr: 1, CotaTVA: 0}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	draft, err := a.NewDocumentDraft()
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	if draft.Iesire[0].CotaTVA != 0 {
+		t.Errorf("draft.Iesire[0].CotaTVA = %v, want 0 (the configured rate)", draft.Iesire[0].CotaTVA)
+	}
+	if draft.Iesire[0].PretFaraTVA != 21.9 {
+		t.Errorf("draft.Iesire[0].PretFaraTVA = %v, want 21.9 (a zero rate leaves the price alone)", draft.Iesire[0].PretFaraTVA)
+	}
+}
+
+func TestNewDocumentDraftKeepsThePreviousRowsOwnRate(t *testing.T) {
+	a := newTestApp(t)
+
+	first, err := a.NewDocumentDraft()
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	first.Intrare = []model.IntrareRow{
+		{Denumire: "Carcasa porc f cap", UM: "Kg", Cantitate: 100, PretFaraTVA: 12.50, PretCuTVA: 15.13, CotaTVA: 21},
+	}
+	if _, err := a.SaveDocument(first); err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
+
+	draft, err := a.NewDocumentDraft()
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	if draft.Intrare[0].CotaTVA != 21 {
+		t.Errorf("draft.Intrare[0].CotaTVA = %v, want 21 (carried over with the row, not reset to the default)", draft.Intrare[0].CotaTVA)
+	}
+}

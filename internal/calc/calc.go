@@ -91,3 +91,22 @@ func IncarcaDescarca(totalIesireCuTVA, totalIntrareCuTVA float64) (string, float
 		return "", 0
 	}
 }
+
+// PretFaraTVA is the price without TVA that a price with TVA implies at the
+// given rate, in percent. The second result is false when the rate cannot be
+// applied at all — at -100% or below the multiplier is zero or negative, which
+// has no usable inverse — and callers should then leave the price alone rather
+// than store an infinity.
+//
+// Its counterpart in the frontend is pretFaraTvaDin in frontend/src/calc.ts,
+// which must stay in step with it. Only this direction exists on the Go side:
+// deriving a price with TVA is something only the form does, while the Go side
+// needs the reverse to prefill a new document's "ce iese" rows from the stored
+// product prices (see App.NewDocumentDraft).
+func PretFaraTVA(pretCuTVA, cota float64) (float64, bool) {
+	factor := 1 + cota/100
+	if factor <= 0 {
+		return 0, false
+	}
+	return Round2(pretCuTVA / factor), true
+}

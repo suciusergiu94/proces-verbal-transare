@@ -64,7 +64,7 @@ func (s *Store) GetDocument(id int64) (model.Document, error) {
 
 func (s *Store) intrareRows(documentID int64) ([]model.IntrareRow, error) {
 	rows, err := s.db.Query(
-		`SELECT id, pozitie, denumire, um, cantitate, pret_fara_tva, pret_cu_tva
+		`SELECT id, pozitie, denumire, um, cantitate, pret_fara_tva, pret_cu_tva, cota_tva
 		 FROM document_intrare_rows WHERE document_id = ? ORDER BY pozitie, id`, documentID,
 	)
 	if err != nil {
@@ -75,7 +75,7 @@ func (s *Store) intrareRows(documentID int64) ([]model.IntrareRow, error) {
 	out := []model.IntrareRow{}
 	for rows.Next() {
 		var r model.IntrareRow
-		if err := rows.Scan(&r.ID, &r.Pozitie, &r.Denumire, &r.UM, &r.Cantitate, &r.PretFaraTVA, &r.PretCuTVA); err != nil {
+		if err := rows.Scan(&r.ID, &r.Pozitie, &r.Denumire, &r.UM, &r.Cantitate, &r.PretFaraTVA, &r.PretCuTVA, &r.CotaTVA); err != nil {
 			return nil, fmt.Errorf("citire rand intrare: %w", err)
 		}
 		out = append(out, r)
@@ -85,7 +85,7 @@ func (s *Store) intrareRows(documentID int64) ([]model.IntrareRow, error) {
 
 func (s *Store) iesireRows(documentID int64) ([]model.IesireRow, error) {
 	rows, err := s.db.Query(
-		`SELECT id, product_id, pozitie, denumire, um, pret_cu_tva, cantitate, pret_fara_tva
+		`SELECT id, product_id, pozitie, denumire, um, pret_cu_tva, cantitate, pret_fara_tva, cota_tva
 		 FROM document_iesire_rows WHERE document_id = ? ORDER BY pozitie, id`, documentID,
 	)
 	if err != nil {
@@ -99,7 +99,7 @@ func (s *Store) iesireRows(documentID int64) ([]model.IesireRow, error) {
 			r         model.IesireRow
 			productID sql.NullInt64
 		)
-		if err := rows.Scan(&r.ID, &productID, &r.Pozitie, &r.Denumire, &r.UM, &r.PretCuTVA, &r.Cantitate, &r.PretFaraTVA); err != nil {
+		if err := rows.Scan(&r.ID, &productID, &r.Pozitie, &r.Denumire, &r.UM, &r.PretCuTVA, &r.Cantitate, &r.PretFaraTVA, &r.CotaTVA); err != nil {
 			return nil, fmt.Errorf("citire rand iesire: %w", err)
 		}
 		if productID.Valid {
@@ -184,9 +184,9 @@ func (s *Store) SaveDocument(d model.Document) (model.Document, error) {
 
 	for i, r := range d.Intrare {
 		if _, err := tx.Exec(
-			`INSERT INTO document_intrare_rows (document_id, pozitie, denumire, um, cantitate, pret_fara_tva, pret_cu_tva)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			d.ID, i, r.Denumire, r.UM, r.Cantitate, r.PretFaraTVA, r.PretCuTVA,
+			`INSERT INTO document_intrare_rows (document_id, pozitie, denumire, um, cantitate, pret_fara_tva, pret_cu_tva, cota_tva)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.ID, i, r.Denumire, r.UM, r.Cantitate, r.PretFaraTVA, r.PretCuTVA, r.CotaTVA,
 		); err != nil {
 			return model.Document{}, fmt.Errorf("salvare rand intrare: %w", err)
 		}
@@ -197,9 +197,9 @@ func (s *Store) SaveDocument(d model.Document) (model.Document, error) {
 			productID = *r.ProductID
 		}
 		if _, err := tx.Exec(
-			`INSERT INTO document_iesire_rows (document_id, product_id, pozitie, denumire, um, pret_cu_tva, cantitate, pret_fara_tva)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			d.ID, productID, i, r.Denumire, r.UM, r.PretCuTVA, r.Cantitate, r.PretFaraTVA,
+			`INSERT INTO document_iesire_rows (document_id, product_id, pozitie, denumire, um, pret_cu_tva, cantitate, pret_fara_tva, cota_tva)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.ID, productID, i, r.Denumire, r.UM, r.PretCuTVA, r.Cantitate, r.PretFaraTVA, r.CotaTVA,
 		); err != nil {
 			return model.Document{}, fmt.Errorf("salvare rand iesire: %w", err)
 		}

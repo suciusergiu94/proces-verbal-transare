@@ -234,3 +234,30 @@ func TestIesireRowKeepsSnapshotAfterProductDeleted(t *testing.T) {
 		t.Errorf("ProductID = %v, want nil after the product was deleted", *got.Iesire[0].ProductID)
 	}
 }
+
+func TestSaveDocumentRoundTripsRowTvaRates(t *testing.T) {
+	s := newTestStore(t)
+
+	d := sampleDocument()
+	d.Intrare[0].CotaTVA = 11
+	d.Iesire[0].CotaTVA = 11
+	d.Iesire[1].CotaTVA = 21 // a row deliberately taxed at a different rate
+
+	saved, err := s.SaveDocument(d)
+	if err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
+	got, err := s.GetDocument(saved.ID)
+	if err != nil {
+		t.Fatalf("GetDocument: %v", err)
+	}
+	if got.Intrare[0].CotaTVA != 11 {
+		t.Errorf("Intrare[0].CotaTVA = %v, want 11", got.Intrare[0].CotaTVA)
+	}
+	if got.Iesire[0].CotaTVA != 11 {
+		t.Errorf("Iesire[0].CotaTVA = %v, want 11", got.Iesire[0].CotaTVA)
+	}
+	if got.Iesire[1].CotaTVA != 21 {
+		t.Errorf("Iesire[1].CotaTVA = %v, want 21 (a per-row rate must survive)", got.Iesire[1].CotaTVA)
+	}
+}

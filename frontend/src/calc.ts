@@ -80,3 +80,26 @@ export function marjaProfit(iesireCuTva: number, intrareCuTva: number): number |
   if (intrareCuTva === 0) return undefined;
   return round2(((iesireCuTva - intrareCuTva) / intrareCuTva) * 100);
 }
+
+/**
+ * The multiplier a TVA rate applies to a price without TVA, or undefined when
+ * the rate cannot be applied at all: at -100% or below the multiplier is zero
+ * or negative, which has no usable inverse. Callers treat undefined as "leave
+ * the other price alone" rather than writing a zero or an Infinity.
+ */
+function multiplicatorTva(cota: number): number | undefined {
+  const factor = 1 + cota / 100;
+  return factor > 0 ? factor : undefined;
+}
+
+/** The price with TVA that a price without TVA implies at the given rate. */
+export function pretCuTvaDin(pretFaraTva: number, cota: number): number | undefined {
+  const factor = multiplicatorTva(cota);
+  return factor === undefined ? undefined : round2(pretFaraTva * factor);
+}
+
+/** The price without TVA that a price with TVA implies at the given rate. */
+export function pretFaraTvaDin(pretCuTva: number, cota: number): number | undefined {
+  const factor = multiplicatorTva(cota);
+  return factor === undefined ? undefined : round2(pretCuTva / factor);
+}

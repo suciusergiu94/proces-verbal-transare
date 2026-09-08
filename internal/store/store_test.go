@@ -81,8 +81,8 @@ func TestOpenSetsUserVersion(t *testing.T) {
 	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatalf("PRAGMA user_version: %v", err)
 	}
-	if version != 1 {
-		t.Errorf("user_version = %d, want 1", version)
+	if version != 2 {
+		t.Errorf("user_version = %d, want 2 (bumped when the TVA rate columns were added)", version)
 	}
 }
 
@@ -149,5 +149,32 @@ func TestSaveProductsInsertsUpdatesDeletesAndReorders(t *testing.T) {
 	}
 	if got[2].ID == 0 {
 		t.Error("newly inserted product has ID 0, want a generated id")
+	}
+}
+
+func TestSettingsSeedTvaRate(t *testing.T) {
+	s := newTestStore(t)
+
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if got.CotaTVA != 11 {
+		t.Errorf("CotaTVA = %v, want 11 (standard Romanian food rate)", got.CotaTVA)
+	}
+}
+
+func TestSaveSettingsRoundTripsTvaRate(t *testing.T) {
+	s := newTestStore(t)
+
+	if err := s.SaveSettings(model.Settings{UnitateNume: "X", NextNr: 4, CotaTVA: 21}); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	got, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if got.CotaTVA != 21 {
+		t.Errorf("CotaTVA = %v, want 21", got.CotaTVA)
 	}
 }

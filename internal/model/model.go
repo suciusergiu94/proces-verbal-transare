@@ -6,6 +6,10 @@ package model
 type Settings struct {
 	UnitateNume string `json:"unitateNume"`
 	NextNr      int    `json:"nextNr"`
+	// CotaTVA is the TVA percentage new rows start from, e.g. 11 for the
+	// Romanian food rate. It is a default, not a rule: every row carries its
+	// own rate and may depart from this one.
+	CotaTVA float64 `json:"cotaTva"`
 }
 
 // Product is one entry of the fixed "ce iese" product list.
@@ -26,6 +30,7 @@ type IntrareRow struct {
 	Cantitate   float64 `json:"cantitate"`
 	PretFaraTVA float64 `json:"pretFaraTva"`
 	PretCuTVA   float64 `json:"pretCuTva"`
+	CotaTVA     float64 `json:"cotaTva"`
 }
 
 // IesireRow is a row of the "ce iese" table. Denumire, UM and PretCuTVA are
@@ -40,6 +45,7 @@ type IesireRow struct {
 	PretCuTVA   float64 `json:"pretCuTva"`
 	Cantitate   float64 `json:"cantitate"`
 	PretFaraTVA float64 `json:"pretFaraTva"`
+	CotaTVA     float64 `json:"cotaTva"`
 }
 
 // Document is a full proces verbal with both tables.

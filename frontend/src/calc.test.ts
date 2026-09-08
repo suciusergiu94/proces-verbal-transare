@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { diferenta, incarcaDescarca, marjaProfit, round2, totals, valoare } from './calc';
+import {
+  diferenta,
+  incarcaDescarca,
+  marjaProfit,
+  pretCuTvaDin,
+  pretFaraTvaDin,
+  round2,
+  totals,
+  valoare,
+} from './calc';
 
 describe('round2', () => {
   it('rounds half away from zero', () => {
@@ -70,5 +79,51 @@ describe('marjaProfit', () => {
   it('is undefined rather than infinite when nothing went in', () => {
     expect(marjaProfit(21311, 0)).toBeUndefined();
     expect(marjaProfit(0, 0)).toBeUndefined();
+  });
+});
+
+describe('pretCuTvaDin', () => {
+  it('adds the rate to a price without TVA', () => {
+    expect(pretCuTvaDin(100, 11)).toBe(111);
+  });
+
+  it('rounds to two decimals', () => {
+    expect(pretCuTvaDin(19.73, 11)).toBe(21.9);
+  });
+
+  it('leaves a price unchanged at a zero rate', () => {
+    expect(pretCuTvaDin(21.9, 0)).toBe(21.9);
+  });
+
+  it('converts a zero price to zero', () => {
+    expect(pretCuTvaDin(0, 11)).toBe(0);
+  });
+
+  it('gives up on a rate of -100% or lower, which has no inverse', () => {
+    expect(pretCuTvaDin(21.9, -100)).toBeUndefined();
+    expect(pretCuTvaDin(21.9, -150)).toBeUndefined();
+  });
+});
+
+describe('pretFaraTvaDin', () => {
+  it('strips the rate from a price with TVA', () => {
+    expect(pretFaraTvaDin(111, 11)).toBe(100);
+  });
+
+  it('rounds to two decimals', () => {
+    expect(pretFaraTvaDin(21.9, 11)).toBe(19.73);
+  });
+
+  it('leaves a price unchanged at a zero rate', () => {
+    expect(pretFaraTvaDin(21.9, 0)).toBe(21.9);
+  });
+
+  it('converts a zero price to zero', () => {
+    expect(pretFaraTvaDin(0, 11)).toBe(0);
+  });
+
+  it('gives up on a rate of -100% or lower, which would divide by zero', () => {
+    expect(pretFaraTvaDin(21.9, -100)).toBeUndefined();
+    expect(pretFaraTvaDin(21.9, -150)).toBeUndefined();
   });
 });

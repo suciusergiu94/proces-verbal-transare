@@ -48,6 +48,10 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
           <label for="s-nextnr">Următorul NR</label>
           <input id="s-nextnr" class="num" type="number" min="1" step="1" value="${settings.nextNr}" />
         </div>
+        <div class="field">
+          <label for="s-cota">Cotă TVA implicită (%)</label>
+          <input id="s-cota" class="num" value="${settings.cotaTva}" />
+        </div>
       </div>
 
       <h2>Produse (tabelul "ce iese")</h2>
@@ -114,6 +118,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
     const rawNextNr = Number((outlet.querySelector('#s-nextnr') as HTMLInputElement).value);
     const truncatedNextNr = Math.trunc(rawNextNr);
     settings.nextNr = Number.isFinite(truncatedNextNr) && truncatedNextNr >= 1 ? truncatedNextNr : 1;
+    settings.cotaTva = parseNumber((outlet.querySelector('#s-cota') as HTMLInputElement).value);
 
     outlet.querySelectorAll<HTMLTableRowElement>('tbody tr[data-index]').forEach((tr) => {
       const product = products[Number(tr.dataset.index)];
@@ -130,6 +135,10 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
     readForm();
     if (products.some((p) => p.denumire.trim() === '')) {
       window.alert('Fiecare produs trebuie să aibă o denumire.');
+      return;
+    }
+    if (settings.cotaTva < 0) {
+      window.alert('Cota TVA nu poate fi negativă.');
       return;
     }
     try {

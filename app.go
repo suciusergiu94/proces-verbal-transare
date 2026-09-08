@@ -106,6 +106,9 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 	if hasLast {
 		draft.Gestiune = last.Gestiune
 		for i, r := range last.Intrare {
+			// The rate travels with the row: a line the user deliberately taxed
+			// at something other than the default keeps that rate when it is
+			// carried into the next document, alongside its prices.
 			draft.Intrare = append(draft.Intrare, model.IntrareRow{
 				Pozitie:     i,
 				Denumire:    r.Denumire,
@@ -113,21 +116,34 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 				Cantitate:   r.Cantitate,
 				PretFaraTVA: r.PretFaraTVA,
 				PretCuTVA:   r.PretCuTVA,
+				CotaTVA:     r.CotaTVA,
 			})
 		}
 	}
 	if len(draft.Intrare) == 0 {
-		draft.Intrare = append(draft.Intrare, model.IntrareRow{Pozitie: 0, UM: "Kg"})
+		draft.Intrare = append(draft.Intrare, model.IntrareRow{
+			Pozitie: 0,
+			UM:      "Kg",
+			CotaTVA: settings.CotaTVA,
+		})
 	}
 
+	// Products carry only a price with TVA, so the "fara TVA" column of a fresh
+	// document is derived from it at the default rate. That makes a new
+	// document arrive fully priced instead of with a column of zeros; the user
+	// can still override either price, or the row's rate, afterwards. An
+	// unusable rate leaves the price at zero rather than storing an infinity.
 	for i, p := range products {
 		id := p.ID
+		pretFaraTVA, _ := calc.PretFaraTVA(p.PretCuTVA, settings.CotaTVA)
 		draft.Iesire = append(draft.Iesire, model.IesireRow{
-			ProductID: &id,
-			Pozitie:   i,
-			Denumire:  p.Denumire,
-			UM:        p.UM,
-			PretCuTVA: p.PretCuTVA,
+			ProductID:   &id,
+			Pozitie:     i,
+			Denumire:    p.Denumire,
+			UM:          p.UM,
+			PretCuTVA:   p.PretCuTVA,
+			PretFaraTVA: pretFaraTVA,
+			CotaTVA:     settings.CotaTVA,
 		})
 	}
 	return draft, nil

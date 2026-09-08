@@ -8,9 +8,18 @@ import {
   showError,
 } from '../api';
 import type { Document } from '../api';
-import { diferenta, incarcaDescarca, marjaProfit, totals, valoare } from '../calc';
+import {
+  diferenta,
+  incarcaDescarca,
+  marjaProfit,
+  pretCuTvaDin,
+  pretFaraTvaDin,
+  totals,
+  valoare,
+} from '../calc';
 import { formatNumber, parseNumber } from '../format';
 import { navigate } from '../router';
+import { showToast } from '../toast';
 import { escapeHtml } from '../sidebar';
 
 // documentInputAbort holds the AbortController for the currently-attached
@@ -31,6 +40,8 @@ export async function renderDocumentView(
 ): Promise<void> {
   let doc: Document;
   let unitate = '';
+  // The rate new rows start from. Rows already on the document keep their own.
+  let cotaImplicita = 0;
 
   try {
     const [loaded, settings] = await Promise.all([
@@ -39,6 +50,7 @@ export async function renderDocumentView(
     ]);
     doc = loaded;
     unitate = settings.unitateNume;
+    cotaImplicita = settings.cotaTva;
   } catch (err) {
     showError('Nu s-a putut încărca documentul', err);
     outlet.innerHTML = '<p class="empty">Documentul nu a putut fi încărcat.</p>';
@@ -147,6 +159,7 @@ export async function renderDocumentView(
           <td class="num"><input class="num" data-field="cantitate" value="${row.cantitate || ''}" /></td>
           <td class="num"><input class="num" data-field="pretFaraTva" value="${row.pretFaraTva || ''}" /></td>
           <td class="num" data-out="valoareFaraTva"></td>
+          <td class="num cota"><input class="num" data-field="cotaTva" value="${row.cotaTva}" /></td>
           <td class="num"><input class="num" data-field="pretCuTva" value="${row.pretCuTva || ''}" /></td>
           <td class="num" data-out="valoareCuTva"></td>
           <td><button class="btn-icon" data-remove="${i}" title="Șterge rândul">✕</button></td>
@@ -160,7 +173,7 @@ export async function renderDocumentView(
           <tr>
             <th>Nr. crt.</th><th>Denumire produs</th><th>U/M</th>
             <th class="num">Cantitate</th><th class="num">Preț fără TVA</th><th class="num">Valoare</th>
-            <th class="num">Preț cu TVA</th><th class="num">Valoare</th><th></th>
+            <th class="num cota">TVA %</th><th class="num">Preț cu TVA</th><th class="num">Valoare</th><th></th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -170,6 +183,7 @@ export async function renderDocumentView(
             <td class="num" data-total="intrare-cantitate"></td>
             <td></td>
             <td class="num" data-total="intrare-faraTva"></td>
+            <td></td>
             <td></td>
             <td class="num" data-total="intrare-cuTva"></td>
             <td></td>
@@ -189,6 +203,7 @@ export async function renderDocumentView(
           <td class="num"><input class="num" data-field="cantitate" value="${row.cantitate || ''}" /></td>
           <td class="num"><input class="num" data-field="pretFaraTva" value="${row.pretFaraTva || ''}" /></td>
           <td class="num" data-out="valoareFaraTva"></td>
+          <td class="num cota"><input class="num" data-field="cotaTva" value="${row.cotaTva}" /></td>
           <td class="num"><input class="num" data-field="pretCuTva" value="${row.pretCuTva || ''}" /></td>
           <td class="num" data-out="valoareCuTva"></td>
         </tr>`,
@@ -201,7 +216,7 @@ export async function renderDocumentView(
           <tr>
             <th>Nr. crt.</th><th>Denumire produs</th><th>U/M</th>
             <th class="num">Cantitate</th><th class="num">Preț fără TVA</th><th class="num">Valoare</th>
-            <th class="num">Preț cu TVA</th><th class="num">Valoare</th>
+            <th class="num cota">TVA %</th><th class="num">Preț cu TVA</th><th class="num">Valoare</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -211,6 +226,7 @@ export async function renderDocumentView(
             <td class="num" data-total="iesire-cantitate"></td>
             <td></td>
             <td class="num" data-total="iesire-faraTva"></td>
+            <td></td>
             <td></td>
             <td class="num" data-total="iesire-cuTva"></td>
           </tr>
@@ -229,6 +245,7 @@ export async function renderDocumentView(
         cantitate: 0,
         pretFaraTva: 0,
         pretCuTva: 0,
+        cotaTva: cotaImplicita,
       });
       renderAll();
     });
@@ -252,9 +269,45 @@ export async function renderDocumentView(
     if (deleteBtn) deleteBtn.addEventListener('click', () => void onDelete());
   }
 
-  function onInput(): void {
+  function onInput(event: Event): void {
     readForm();
+    const target = event.target;
+    if (target instanceof HTMLInputElement) {
+      const tr = target.closest<HTMLTableRowElement>('tr[data-table]');
+      if (tr && target.dataset.field) syncPrices(tr, target.dataset.field);
+    }
     recompute();
+  }
+
+  /**
+   * Keeps a row's two prices in step through its TVA rate: typing one price
+   * fills in the other. Changing the rate re-derives the price without TVA,
+   * because the price with TVA is the anchor — it is what the product list
+   * stores and what the shop actually charges.
+   *
+   * Only the *other* input is written, never the one being typed in, so the
+   * caret never jumps and assigning .value raises no further `input` event.
+   * A rate with no usable inverse (-100% or below) leaves both prices alone
+   * rather than writing a zero the user did not ask for.
+   */
+  function syncPrices(tr: HTMLTableRowElement, changed: string): void {
+    const index = Number(tr.dataset.index);
+    const row = tr.dataset.table === 'intrare' ? doc.intrare[index] : doc.iesire[index];
+    if (!row) return;
+
+    if (changed === 'pretFaraTva') {
+      const derived = pretCuTvaDin(row.pretFaraTva, row.cotaTva);
+      if (derived === undefined) return;
+      row.pretCuTva = derived;
+      setRowField(tr, 'pretCuTva', derived);
+      return;
+    }
+    if (changed === 'pretCuTva' || changed === 'cotaTva') {
+      const derived = pretFaraTvaDin(row.pretCuTva, row.cotaTva);
+      if (derived === undefined) return;
+      row.pretFaraTva = derived;
+      setRowField(tr, 'pretFaraTva', derived);
+    }
   }
 
   /** Copies every input's current value back into doc. */
@@ -279,6 +332,7 @@ export async function renderDocumentView(
       row.cantitate = parseNumber(fieldValue(tr, 'cantitate'));
       row.pretFaraTva = parseNumber(fieldValue(tr, 'pretFaraTva'));
       row.pretCuTva = parseNumber(fieldValue(tr, 'pretCuTva'));
+      row.cotaTva = parseNumber(fieldValue(tr, 'cotaTva'));
     });
   }
 
@@ -376,9 +430,12 @@ export async function renderDocumentView(
   }
 
   async function onSave(): Promise<void> {
-    if (await saveCurrentForm()) {
-      navigate(`#/document/${doc.id}`);
-    }
+    if (!(await saveCurrentForm())) return;
+    // navigate() re-runs the router and rebuilds this view from the stored
+    // document, so the toast is raised after it — the toast lives on
+    // document.body, outside the outlet that renderAll() overwrites.
+    navigate(`#/document/${doc.id}`);
+    showToast('Salvat!');
   }
 
   // ExportPDF re-reads the document from SQLite by id, so printing without
@@ -422,6 +479,15 @@ export async function renderDocumentView(
   function fieldValue(tr: HTMLTableRowElement, field: string): string {
     const input = tr.querySelector<HTMLInputElement>(`[data-field="${field}"]`);
     return input ? input.value : '';
+  }
+
+  /**
+   * Writes a derived price into a row input. Zero shows as blank, matching how
+   * the table renders an empty price, so clearing one price clears the other.
+   */
+  function setRowField(tr: HTMLTableRowElement, field: string, amount: number): void {
+    const input = tr.querySelector<HTMLInputElement>(`[data-field="${field}"]`);
+    if (input) input.value = amount === 0 ? '' : String(amount);
   }
 
   function setOut(tr: HTMLTableRowElement, name: string, amount: number): void {
