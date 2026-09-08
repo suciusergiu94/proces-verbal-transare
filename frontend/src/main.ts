@@ -22,12 +22,20 @@ void refreshSidebar();
 startRouter(
   [
     {
+      // The bare draft route has no template on it — a stale hash, or the
+      // empty-hash fallback on a fresh launch. renderDocumentView sends it to
+      // the first template rather than failing.
       pattern: /^#\/document\/new$/,
-      render: (el) => renderDocumentView(el, undefined, refreshSidebar),
+      render: (el) => renderDocumentView(el, undefined, refreshSidebar, undefined),
+    },
+    {
+      pattern: /^#\/document\/new\/(\d+)$/,
+      render: (el, templateId) =>
+        renderDocumentView(el, undefined, refreshSidebar, Number(templateId)),
     },
     {
       pattern: /^#\/document\/(\d+)$/,
-      render: (el, id) => renderDocumentView(el, id, refreshSidebar),
+      render: (el, id) => renderDocumentView(el, id, refreshSidebar, undefined),
     },
     {
       pattern: /^#\/setari$/,

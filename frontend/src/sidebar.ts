@@ -1,11 +1,12 @@
-import { DocumentSummary, ListDocuments, showError } from './api';
+import { DocumentSummary, ListDocuments, ListTemplates, showError } from './api';
+import type { Template } from './api';
 import { formatDateRO } from './format';
 import { navigate } from './router';
+import { DRAFT_PREFIX, draftHash, draftTemplateId, isDraftHash } from './templates';
 
 let hashchangeListenerRegistered = false;
 
-/** The route an unsaved document lives at. */
-export const DRAFT_HASH = '#/document/new';
+export { DRAFT_PREFIX } from './templates';
 
 /**
  * The hash to match sidebar entries against. A freshly launched app has an
@@ -14,17 +15,19 @@ export const DRAFT_HASH = '#/document/new';
  * entry highlighted, on the one screen the app always opens on.
  */
 export function currentHash(hash: string = window.location.hash): string {
-  return hash || DRAFT_HASH;
+  return hash || DRAFT_PREFIX;
 }
 
 /** Renders the sidebar: new-document button, document history, settings link. */
 export async function renderSidebar(el: HTMLElement): Promise<void> {
   let documents: DocumentSummary[];
+  let templates: Template[];
   try {
-    documents = await ListDocuments();
+    [documents, templates] = await Promise.all([ListDocuments(), ListTemplates()]);
   } catch (err) {
     showError('Nu s-a putut încărca lista de documente', err);
     documents = [];
+    templates = [];
   }
 
   const items = documents
@@ -39,16 +42,36 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
     )
     .join('');
 
+  // With one template there is nothing to choose, so the button goes straight
+  // to it and no menu is drawn at all — an install that never adds a second
+  // template behaves exactly as it did before templates existed.
+  const menu =
+    templates.length < 2
+      ? ''
+      : `<ul class="template-menu" id="template-menu" hidden>
+          ${templates
+            .map(
+              (t) => `
+            <li>
+              <a class="template-link" href="${draftHash(t.id)}">${escapeHtml(t.nume)}</a>
+            </li>`,
+            )
+            .join('')}
+        </ul>`;
+
   // The draft entry is rendered on every pass and shown or hidden by
   // markActive, so moving in and out of #/document/new only toggles an
   // attribute instead of rebuilding a sidebar whose document list costs a
   // round trip to SQLite. It sits above the saved documents because the list
   // is newest-first and the unsaved one is newer than all of them.
   el.innerHTML = `
-    <button class="btn btn-primary" id="new-doc">+ Document nou</button>
+    <div class="new-doc-wrap">
+      <button class="btn btn-primary" id="new-doc">+ Document nou</button>
+      ${menu}
+    </div>
     <ul class="doc-list">
       <li id="draft-item" hidden>
-        <a class="doc-link" href="${DRAFT_HASH}">
+        <a class="doc-link" id="draft-link" href="${DRAFT_PREFIX}">
           <span class="doc-nr">Document nou</span>
           <span class="doc-meta draft-meta">Nesalvat</span>
         </a>
@@ -58,21 +81,55 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
     <a class="settings-link" href="#/setari">Setări</a>
   `;
 
+  const menuEl = el.querySelector<HTMLUListElement>('#template-menu');
   el.querySelector<HTMLButtonElement>('#new-doc')!.addEventListener('click', () => {
-    navigate(DRAFT_HASH);
+    if (menuEl === null) {
+      // One template, or none loaded: go where there is only one place to go.
+      if (templates.length === 1) navigate(draftHash(templates[0].id));
+      return;
+    }
+    menuEl.toggleAttribute('hidden');
   });
 
-  markActive(el);
+  // Picking a template closes the menu; the href does the navigating.
+  menuEl?.querySelectorAll('a').forEach((link) => {
+    link.addEventListener('click', () => menuEl.setAttribute('hidden', ''));
+  });
+
+  // A click anywhere else closes it, so it does not sit open over the history.
+  document.addEventListener('click', (event) => {
+    if (menuEl === null || menuEl.hasAttribute('hidden')) return;
+    if (!el.querySelector('.new-doc-wrap')!.contains(event.target as Node)) {
+      menuEl.setAttribute('hidden', '');
+    }
+  });
+
+  markActive(el, templates);
 
   if (!hashchangeListenerRegistered) {
     hashchangeListenerRegistered = true;
-    window.addEventListener('hashchange', () => markActive(el));
+    window.addEventListener('hashchange', () => markActive(el, templates));
   }
 }
 
-function markActive(el: HTMLElement): void {
+function markActive(el: HTMLElement, templates: Template[]): void {
   const hash = currentHash();
-  el.querySelector('#draft-item')?.toggleAttribute('hidden', hash !== DRAFT_HASH);
+  const draftItem = el.querySelector('#draft-item');
+  draftItem?.toggleAttribute('hidden', !isDraftHash(hash));
+
+  // The draft entry points at whatever draft is open, and says which template
+  // it came from, so two unsaved documents are never confusable.
+  const draftLink = el.querySelector<HTMLAnchorElement>('#draft-link');
+  if (draftLink !== null && isDraftHash(hash)) {
+    draftLink.setAttribute('href', hash);
+    const templateId = draftTemplateId(hash);
+    const template = templates.find((t) => t.id === templateId);
+    const meta = draftLink.querySelector('.draft-meta');
+    if (meta !== null) {
+      meta.textContent = template === undefined ? 'Nesalvat' : `Nesalvat — ${template.nume}`;
+    }
+  }
+
   el.querySelectorAll('a').forEach((link) => {
     link.classList.toggle('active', link.getAttribute('href') === hash);
   });

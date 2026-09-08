@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { DRAFT_HASH, currentHash } from './sidebar';
+import { DRAFT_PREFIX, currentHash } from './sidebar';
 
 describe('currentHash', () => {
   it('falls back to the draft route for the empty hash of a freshly launched app', () => {
-    expect(currentHash('')).toBe(DRAFT_HASH);
+    expect(currentHash('')).toBe(DRAFT_PREFIX);
   });
 
   it('leaves a real route untouched', () => {
@@ -12,6 +12,10 @@ describe('currentHash', () => {
   });
 
   it('leaves the draft route untouched', () => {
-    expect(currentHash(DRAFT_HASH)).toBe(DRAFT_HASH);
+    expect(currentHash(DRAFT_PREFIX)).toBe(DRAFT_PREFIX);
+  });
+
+  it('recognises a templated draft route as a real route', () => {
+    expect(currentHash('#/document/new/3')).toBe('#/document/new/3');
   });
 });

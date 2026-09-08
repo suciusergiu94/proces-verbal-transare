@@ -48,6 +48,9 @@ export async function renderDocumentView(
   outlet: HTMLElement,
   id: string | undefined,
   refreshSidebar: () => Promise<void>,
+  // Unused for now — Task 8 gives this the id of the template a new draft is
+  // created from.
+  templateId?: number,
 ): Promise<void> {
   let doc: Document;
   let unitate = '';
