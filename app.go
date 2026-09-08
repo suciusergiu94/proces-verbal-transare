@@ -189,14 +189,14 @@ func (a *App) ExportPDF(id int64) (string, error) {
 		},
 	})
 	if err != nil {
-		return "", fmt.Errorf("alegere fisier: %w", err)
+		return "", fmt.Errorf("alegere fișier: %w", err)
 	}
 	if path == "" {
 		return "", nil // user cancelled
 	}
 
 	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", fmt.Errorf("scriere fisier PDF: %w", err)
+		return "", fmt.Errorf("scriere fișier PDF: %w", err)
 	}
 	if err := browser.OpenFile(path); err != nil {
 		// The file is on disk; failing to open the viewer is not fatal.

@@ -121,16 +121,20 @@ func totalRow(t calc.Totals) []string {
 	return []string{"", "Total", "", num(t.Cantitate), "", num(t.ValoareFaraTVA), "", num(t.ValoareCuTVA)}
 }
 
+// drawTable draws a table's header, body and totals row. Row boundaries are
+// checked explicitly (via GetY(), rather than fpdf's SetHeaderFunc) so that a
+// row is never split across a page break, and so the column header only gets
+// redrawn on the table's own overflow pages, not on every page of the
+// document: SetHeaderFunc fires on every AddPage, including the ones drawn
+// for the surrounding header/footer, which would need extra state to
+// suppress there.
 func drawTable(pdf *fpdf.Fpdf, table tableCells) {
-	pdf.SetFont("Arial", "B", 8)
-	pdf.SetX(marginLeft)
-	for i, cell := range table.header {
-		pdf.CellFormat(colWidths[i], rowHeight, cell, "1", 0, "C", false, 0, "")
-	}
-	pdf.Ln(-1)
+	drawTableHeader(pdf, table.header)
 
 	pdf.SetFont("Arial", "", 8)
 	for _, row := range table.body {
+		ensureRowFits(pdf, table.header)
+		pdf.SetFont("Arial", "", 8)
 		pdf.SetX(marginLeft)
 		for i, cell := range row {
 			align := "L"
@@ -142,6 +146,7 @@ func drawTable(pdf *fpdf.Fpdf, table tableCells) {
 		pdf.Ln(-1)
 	}
 
+	ensureRowFits(pdf, table.header)
 	pdf.SetFont("Arial", "B", 8)
 	pdf.SetX(marginLeft)
 	for i, cell := range table.total {
@@ -152,6 +157,29 @@ func drawTable(pdf *fpdf.Fpdf, table tableCells) {
 		pdf.CellFormat(colWidths[i], rowHeight, cell, "1", 0, align, false, 0, "")
 	}
 	pdf.Ln(-1)
+}
+
+// drawTableHeader draws one instance of the column header row.
+func drawTableHeader(pdf *fpdf.Fpdf, header []string) {
+	pdf.SetFont("Arial", "B", 8)
+	pdf.SetX(marginLeft)
+	for i, cell := range header {
+		pdf.CellFormat(colWidths[i], rowHeight, cell, "1", 0, "C", false, 0, "")
+	}
+	pdf.Ln(-1)
+}
+
+// ensureRowFits forces a page break, and redraws the column header on the new
+// page, if a single row of rowHeight would not fit above the bottom margin.
+// This is a no-op — no new page, no output — as long as the current page
+// still has room, which keeps single-page documents byte-for-byte unchanged.
+func ensureRowFits(pdf *fpdf.Fpdf, header []string) {
+	_, pageHeight := pdf.GetPageSize()
+	_, _, _, bottom := pdf.GetMargins()
+	if pdf.GetY()+rowHeight > pageHeight-bottom {
+		pdf.AddPage()
+		drawTableHeader(pdf, header)
+	}
 }
 
 func drawFooter(pdf *fpdf.Fpdf, doc model.Document) {
