@@ -5,6 +5,16 @@ import { navigate } from './router';
 import { DRAFT_PREFIX, draftHash, draftTemplateId, isDraftHash } from './templates';
 
 let hashchangeListenerRegistered = false;
+let documentClickListenerRegistered = false;
+
+// The templates as of the most recent renderSidebar call. renderSidebar runs
+// again on every save/delete (`refreshSidebar`), rebuilding `el`'s contents
+// each time, but the listeners below are registered only once — against
+// `window`/`document`, which outlive any single render — so they must read
+// this mutable slot at event time rather than close over one render's local
+// `templates`, or they would keep acting on whichever array existed when
+// they were first registered.
+let currentTemplates: Template[] = [];
 
 export { DRAFT_PREFIX } from './templates';
 
@@ -29,6 +39,7 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
     documents = [];
     templates = [];
   }
+  currentTemplates = templates;
 
   const items = documents
     .map(
@@ -96,19 +107,29 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
     link.addEventListener('click', () => menuEl.setAttribute('hidden', ''));
   });
 
-  // A click anywhere else closes it, so it does not sit open over the history.
-  document.addEventListener('click', (event) => {
-    if (menuEl === null || menuEl.hasAttribute('hidden')) return;
-    if (!el.querySelector('.new-doc-wrap')!.contains(event.target as Node)) {
-      menuEl.setAttribute('hidden', '');
-    }
-  });
-
   markActive(el, templates);
+
+  // A click anywhere else closes the menu, so it does not sit open over the
+  // history. This listener lives on `document` and is registered once, like
+  // the `hashchange` listener below — `el` itself is the long-lived sidebar
+  // element (only its contents are replaced each render), so it is safe to
+  // close over, but the menu is looked up fresh on every click rather than
+  // captured, since the `<ul>` node from an earlier render is discarded by
+  // the next `el.innerHTML` assignment.
+  if (!documentClickListenerRegistered) {
+    documentClickListenerRegistered = true;
+    document.addEventListener('click', (event) => {
+      const openMenu = el.querySelector<HTMLUListElement>('#template-menu');
+      if (openMenu === null || openMenu.hasAttribute('hidden')) return;
+      if (!el.querySelector('.new-doc-wrap')!.contains(event.target as Node)) {
+        openMenu.setAttribute('hidden', '');
+      }
+    });
+  }
 
   if (!hashchangeListenerRegistered) {
     hashchangeListenerRegistered = true;
-    window.addEventListener('hashchange', () => markActive(el, templates));
+    window.addEventListener('hashchange', () => markActive(el, currentTemplates));
   }
 }
 
