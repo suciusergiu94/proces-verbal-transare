@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateRO, formatNumber, parseNumber } from './format';
+import { formatDateRO, formatNumber, parseDateRO, parseNumber } from './format';
 
 describe('parseNumber', () => {
   it('accepts a dot decimal separator', () => {
@@ -33,12 +33,47 @@ describe('formatNumber', () => {
 });
 
 describe('formatDateRO', () => {
-  it('renders an ISO date as dd.mm.yyyy', () => {
-    expect(formatDateRO('2026-09-03')).toBe('03.09.2026');
+  it('renders an ISO date as dd/mm/yyyy', () => {
+    expect(formatDateRO('2026-09-03')).toBe('03/09/2026');
   });
 
   it('passes through anything that is not an ISO date', () => {
     expect(formatDateRO('')).toBe('');
     expect(formatDateRO('nope')).toBe('nope');
+  });
+});
+
+describe('parseDateRO', () => {
+  it('reads a dd/mm/yyyy date back as ISO', () => {
+    expect(parseDateRO('03/09/2026')).toBe('2026-09-03');
+  });
+
+  it('accepts a dot or a dash separator and missing leading zeros', () => {
+    expect(parseDateRO('03.09.2026')).toBe('2026-09-03');
+    expect(parseDateRO('03-09-2026')).toBe('2026-09-03');
+    expect(parseDateRO('3/9/2026')).toBe('2026-09-03');
+    expect(parseDateRO('  3/9/2026  ')).toBe('2026-09-03');
+  });
+
+  it('accepts 29 February in a leap year', () => {
+    expect(parseDateRO('29/02/2024')).toBe('2024-02-29');
+  });
+
+  it('rejects dates that do not exist', () => {
+    expect(parseDateRO('31/02/2026')).toBeUndefined();
+    expect(parseDateRO('29/02/2026')).toBeUndefined();
+    expect(parseDateRO('01/13/2026')).toBeUndefined();
+    expect(parseDateRO('00/09/2026')).toBeUndefined();
+  });
+
+  it('rejects blank and half-typed input', () => {
+    expect(parseDateRO('')).toBeUndefined();
+    expect(parseDateRO('03/09')).toBeUndefined();
+    expect(parseDateRO('2026-09-03')).toBeUndefined();
+    expect(parseDateRO('nope')).toBeUndefined();
+  });
+
+  it('round-trips with formatDateRO', () => {
+    expect(formatDateRO(parseDateRO('03/09/2026')!)).toBe('03/09/2026');
   });
 });

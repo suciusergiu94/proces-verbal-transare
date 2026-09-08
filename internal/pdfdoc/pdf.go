@@ -239,10 +239,10 @@ func num(v float64) string {
 	return strconv.FormatFloat(calc.Round2(v), 'f', 2, 64)
 }
 
-// formatDate turns an ISO date into the dd.mm.yyyy the form uses.
+// formatDate turns an ISO date into the dd/mm/yyyy the form uses.
 func formatDate(iso string) string {
 	if len(iso) != 10 {
 		return iso
 	}
-	return iso[8:10] + "." + iso[5:7] + "." + iso[0:4]
+	return iso[8:10] + "/" + iso[5:7] + "/" + iso[0:4]
 }

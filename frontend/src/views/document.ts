@@ -18,7 +18,7 @@ import {
   totals,
   valoare,
 } from '../calc';
-import { formatNumber, parseNumber } from '../format';
+import { formatDateRO, formatNumber, parseDateRO, parseNumber } from '../format';
 import { navigate } from '../router';
 import { showToast } from '../toast';
 import { escapeHtml } from '../sidebar';
@@ -90,7 +90,14 @@ export async function renderDocumentView(
         </div>
         <div class="field">
           <label for="f-data">Data</label>
-          <input id="f-data" type="date" value="${escapeHtml(doc.data)}" />
+          <input
+            id="f-data"
+            type="text"
+            inputmode="numeric"
+            maxlength="10"
+            placeholder="ZZ/LL/AAAA"
+            value="${escapeHtml(formatDateRO(doc.data))}"
+          />
         </div>
         <div class="field">
           <label for="f-referinta">Document referință</label>
@@ -275,6 +282,14 @@ export async function renderDocumentView(
       .querySelector('#marja-minus')!
       .addEventListener('click', () => stepMarja(-PAS_MARJA));
 
+    // Tidies "3.9.2026" into "03/09/2026" once the user leaves the field, so
+    // the form always shows the date in the shape the printed document uses.
+    const dataInput = outlet.querySelector<HTMLInputElement>('#f-data');
+    dataInput?.addEventListener('blur', () => {
+      const iso = parseDateRO(dataInput.value);
+      if (iso) dataInput.value = formatDateRO(iso);
+    });
+
     outlet.querySelector('#save')!.addEventListener('click', () => void onSave());
 
     const printBtn = outlet.querySelector('#print') as HTMLButtonElement | null;
@@ -357,7 +372,9 @@ export async function renderDocumentView(
   function readForm(): void {
     doc.gestiune = value('#f-gestiune');
     doc.nr = Number(value('#f-nr')) || 0;
-    doc.data = value('#f-data');
+    // An unparseable date (blank, or half-typed) lands as an empty string;
+    // saveCurrentForm is what tells the two apart for the error message.
+    doc.data = parseDateRO(value('#f-data')) ?? '';
     doc.documentReferinta = value('#f-referinta');
     // Diferență and "Suma cu care se încarcă/descarcă" are derived, never
     // typed: recompute() is what writes them onto doc (see recompute).
@@ -459,7 +476,11 @@ export async function renderDocumentView(
       return false;
     }
     if (!doc.data) {
-      window.alert('Completați data documentului.');
+      window.alert(
+        value('#f-data').trim() === ''
+          ? 'Completați data documentului.'
+          : 'Data documentului nu este validă. Folosiți formatul ZZ/LL/AAAA.',
+      );
       return false;
     }
     try {
