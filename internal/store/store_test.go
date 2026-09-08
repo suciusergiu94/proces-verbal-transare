@@ -101,8 +101,8 @@ func TestOpenSetsUserVersion(t *testing.T) {
 	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatalf("PRAGMA user_version: %v", err)
 	}
-	if version != 3 {
-		t.Errorf("user_version = %d, want 3 (bumped when the carcass ratio column was added)", version)
+	if version != 4 {
+		t.Errorf("user_version = %d, want 4 (bumped when the default gestiune was added)", version)
 	}
 }
 
@@ -120,16 +120,23 @@ func TestSettingsDefaultsAndRoundTrip(t *testing.T) {
 	if got.NextNr != 2 {
 		t.Errorf("NextNr = %d, want 2", got.NextNr)
 	}
+	if got.Gestiune != "Magazin Bradet" {
+		t.Errorf("Gestiune = %q, want the seeded default", got.Gestiune)
+	}
 
-	if err := s.SaveSettings(model.Settings{UnitateNume: "Alt SRL", NextNr: 194}); err != nil {
+	if err := s.SaveSettings(model.Settings{
+		UnitateNume: "Alt SRL",
+		NextNr:      194,
+		Gestiune:    "Magazin Ocolis",
+	}); err != nil {
 		t.Fatalf("SaveSettings: %v", err)
 	}
 	got, err = s.GetSettings()
 	if err != nil {
 		t.Fatalf("GetSettings after save: %v", err)
 	}
-	if got.UnitateNume != "Alt SRL" || got.NextNr != 194 {
-		t.Errorf("settings = %+v, want {Alt SRL 194}", got)
+	if got.UnitateNume != "Alt SRL" || got.NextNr != 194 || got.Gestiune != "Magazin Ocolis" {
+		t.Errorf("settings = %+v, want {Alt SRL 194 Magazin Ocolis}", got)
 	}
 }
 
@@ -214,6 +221,11 @@ func TestOpenSeedsFirstDocument(t *testing.T) {
 	}
 	if docs[0].Nr != 1 {
 		t.Errorf("docs[0].Nr = %d, want 1", docs[0].Nr)
+	}
+	// The shipped document is booked against the same default a fresh install
+	// starts from, so the example agrees with the settings beside it.
+	if docs[0].Gestiune != "Magazin Bradet" {
+		t.Errorf("docs[0].Gestiune = %q, want the seeded default", docs[0].Gestiune)
 	}
 
 	doc, err := s.GetDocument(docs[0].ID)

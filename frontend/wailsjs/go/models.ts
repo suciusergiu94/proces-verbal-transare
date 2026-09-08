@@ -160,6 +160,7 @@ export namespace model {
 	    unitateNume: string;
 	    nextNr: number;
 	    cotaTva: number;
+	    gestiune: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Settings(source);
@@ -170,6 +171,7 @@ export namespace model {
 	        this.unitateNume = source["unitateNume"];
 	        this.nextNr = source["nextNr"];
 	        this.cotaTva = source["cotaTva"];
+	        this.gestiune = source["gestiune"];
 	    }
 	}
 

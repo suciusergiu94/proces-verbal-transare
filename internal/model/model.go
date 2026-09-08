@@ -10,6 +10,10 @@ type Settings struct {
 	// Romanian food rate. It is a default, not a rule: every row carries its
 	// own rate and may depart from this one.
 	CotaTVA float64 `json:"cotaTva"`
+	// Gestiune is the gestiune new documents start from. Like CotaTVA it is a
+	// default, not a rule: every document carries its own and may depart from
+	// this one.
+	Gestiune string `json:"gestiune"`
 }
 
 // Product is one entry of the fixed "ce iese" product list.

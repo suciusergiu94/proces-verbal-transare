@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   unitate_nume TEXT NOT NULL DEFAULT '',
   next_nr INTEGER NOT NULL DEFAULT 1,
-  cota_tva REAL NOT NULL DEFAULT 11
+  cota_tva REAL NOT NULL DEFAULT 11,
+  gestiune TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS products (
@@ -78,6 +79,10 @@ const defaultUnitate = "S.C. Largiana Carn S.R.L."
 // defaultCotaTVA is the standard Romanian TVA rate for food and food
 // processing, in percent.
 const defaultCotaTVA = 11.0
+
+// defaultGestiune is the gestiune a fresh install starts from, and the one the
+// shipped proces verbal is booked against.
+const defaultGestiune = "Magazin Bradet"
 
 // seedProducts are the 19 items printed on the paper form, in printed order.
 // Row 4 is printed as "Cotiet fara os", an evident typo for "Cotlet fara os".
@@ -249,6 +254,28 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// v4 added the default gestiune. Until now a new document took its gestiune
+	// from the previous one, so an install that has been in use already has an
+	// answer for what the default should be: the gestiune of its newest
+	// document. Seeding the column from ours instead would hand a user who has
+	// never worked in Magazin Bradet a default they have to correct on every
+	// document. Like the v3 backfill this runs on the column's absence, so it
+	// happens exactly once and never overwrites a default the user has edited.
+	hasGestiune, err := hasColumn(db, "settings", "gestiune")
+	if err != nil {
+		return err
+	}
+	if !hasGestiune {
+		if _, err := db.Exec(
+			`ALTER TABLE settings ADD COLUMN gestiune TEXT NOT NULL DEFAULT ''`,
+		); err != nil {
+			return err
+		}
+		if err := backfillGestiune(db); err != nil {
+			return err
+		}
+	}
+
 	// Stamp the schema version so a future migration can tell this shape apart
 	// from whatever comes after it. Future migrations should switch on the
 	// current value of PRAGMA user_version.
@@ -256,8 +283,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version < 3 {
-		if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
+	if version < 4 {
+		if _, err := db.Exec(`PRAGMA user_version = 4`); err != nil {
 			return err
 		}
 	}
@@ -278,8 +305,9 @@ func migrate(db *sql.DB) error {
 
 	// NR 1 is taken by the seeded document below, so a new document starts at 2.
 	if _, err := tx.Exec(
-		`INSERT INTO settings (id, unitate_nume, next_nr, cota_tva) VALUES (1, ?, ?, ?)`,
-		defaultUnitate, seedDocumentNr+1, defaultCotaTVA,
+		`INSERT INTO settings (id, unitate_nume, next_nr, cota_tva, gestiune)
+		 VALUES (1, ?, ?, ?, ?)`,
+		defaultUnitate, seedDocumentNr+1, defaultCotaTVA, defaultGestiune,
 	); err != nil {
 		return err
 	}
@@ -344,8 +372,8 @@ func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
 		`INSERT INTO documents (nr, data, gestiune, document_referinta, diferenta_tip,
 		         diferenta_valoare, incarca_descarca_tip, incarca_descarca_valoare,
 		         gestionar, calculator, vizat_compartiment_productie, created_at, updated_at)
-		 VALUES (?, ?, '', '', ?, ?, ?, ?, '', '', '', ?, ?)`,
-		seedDocumentNr, now.Format("2006-01-02"), difTip, difVal, incTip, incVal,
+		 VALUES (?, ?, ?, '', ?, ?, ?, ?, '', '', '', ?, ?)`,
+		seedDocumentNr, now.Format("2006-01-02"), defaultGestiune, difTip, difVal, incTip, incVal,
 		now.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
@@ -378,6 +406,31 @@ func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
 		}
 	}
 	return nil
+}
+
+// backfillGestiune sets the default gestiune to the one on the newest stored
+// document — the same value that document would have passed to the next one
+// back when a draft copied its gestiune from the previous document.
+//
+// A database with no documents, or whose newest document left the field blank,
+// keeps the empty default: there is nothing to carry over, and Setări is where
+// the user says what it should be. The seeded default is deliberately not used
+// as a fallback here, since reaching this code at all means the install predates
+// the column and has a history of its own.
+func backfillGestiune(db *sql.DB) error {
+	var gestiune string
+	err := db.QueryRow(`SELECT gestiune FROM documents ORDER BY id DESC LIMIT 1`).Scan(&gestiune)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if gestiune == "" {
+		return nil
+	}
+	_, err = db.Exec(`UPDATE settings SET gestiune = ? WHERE id = 1`, gestiune)
+	return err
 }
 
 // backfillProcente fills the ratio column from the oldest stored proces verbal:

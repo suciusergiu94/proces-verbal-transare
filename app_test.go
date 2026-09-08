@@ -97,7 +97,9 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 		t.Fatalf("NewDocumentDraft: %v", err)
 	}
 	first.Nr = 193
-	first.Gestiune = "Magazin Bradet"
+	// Deliberately not the seeded default: the draft below must take its
+	// gestiune from the settings, not from this document.
+	first.Gestiune = "Magazin Ocolis"
 	first.Intrare = []model.IntrareRow{
 		{Denumire: "Carcasa porc f cap", UM: "Kg", Cantitate: 162.20, PretFaraTVA: 12.50, PretCuTVA: 14.03},
 	}
@@ -113,7 +115,7 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 		t.Errorf("draft.Nr = %d, want 194 (next_nr bumped after saving 193)", draft.Nr)
 	}
 	if draft.Gestiune != "Magazin Bradet" {
-		t.Errorf("draft.Gestiune = %q, want the previous gestiune", draft.Gestiune)
+		t.Errorf("draft.Gestiune = %q, want the default gestiune from the settings", draft.Gestiune)
 	}
 	if len(draft.Intrare) != 1 || draft.Intrare[0].Denumire != "Carcasa porc f cap" {
 		t.Fatalf("draft.Intrare = %+v, want the previous intrare rows", draft.Intrare)
@@ -121,14 +123,19 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 	if draft.Intrare[0].ID != 0 {
 		t.Errorf("draft.Intrare[0].ID = %d, want 0 (prefilled rows must be unsaved)", draft.Intrare[0].ID)
 	}
-	if draft.Intrare[0].PretCuTVA != 14.03 {
-		t.Errorf("draft.Intrare[0].PretCuTVA = %v, want the previous price", draft.Intrare[0].PretCuTVA)
-	}
-	// The prices carry over, the quantity does not: every carcass is weighed
-	// afresh, so a quantity left over from the previous document would be
-	// wrong on every new one and silently drive the whole "ce iese" split.
+	// The row's shape carries over; nothing it was measured or priced at does.
+	// Both figures are established afresh for every delivery, so a leftover
+	// value is wrong by definition — and because the "ce iese" split is derived
+	// from the quantity, a field left unnoticed would quietly fill the whole
+	// second table with the previous carcass's numbers.
 	if draft.Intrare[0].Cantitate != 0 {
 		t.Errorf("draft.Intrare[0].Cantitate = %v, want 0", draft.Intrare[0].Cantitate)
+	}
+	if draft.Intrare[0].PretFaraTVA != 0 {
+		t.Errorf("draft.Intrare[0].PretFaraTVA = %v, want 0", draft.Intrare[0].PretFaraTVA)
+	}
+	if draft.Intrare[0].PretCuTVA != 0 {
+		t.Errorf("draft.Intrare[0].PretCuTVA = %v, want 0", draft.Intrare[0].PretCuTVA)
 	}
 }
 

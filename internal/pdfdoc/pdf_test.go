@@ -208,3 +208,57 @@ func countPages(data []byte) int {
 	re := regexp.MustCompile(`/Type\s*/Page[^s]`)
 	return len(re.FindAll(data, -1))
 }
+
+// TestRenderFooterChargesTheGestiuneWithTheOutputTotal checks the reworked
+// footer: the gestiune is charged with the whole "ce iese" total with TVA,
+// summed from the printed rows, and the old "Diferenta" line no longer shares
+// the row with it.
+func TestRenderFooterChargesTheGestiuneWithTheOutputTotal(t *testing.T) {
+	doc := model.Document{
+		Nr:   1,
+		Data: "2026-09-07",
+		Iesire: []model.IesireRow{
+			{Pozitie: 0, Denumire: "Pulpa fara os", UM: "Kg", Cantitate: 15, PretCuTVA: 21.9},
+			{Pozitie: 1, Denumire: "Muschiulet", UM: "Kg", Cantitate: 2, PretCuTVA: 39.5},
+		},
+		// Still stored, and still what the form shows on screen. The printed
+		// page must ignore both.
+		DiferentaTip:           "plus",
+		DiferentaValoare:       576.88,
+		IncarcaDescarcaTip:     "incarca",
+		IncarcaDescarcaValoare: 576.88,
+	}
+
+	out, err := Render(doc, "Unitate")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	text := extractPDFText(t, out)
+
+	// 15 x 21.9 = 328.50, plus 2 x 39.5 = 79.00.
+	if !strings.Contains(text, "Suma cu care se incarca gestiunea 407.50") {
+		t.Errorf("footer does not charge the gestiune with the ce iese total 407.50, got:\n%s", text)
+	}
+	if strings.Contains(text, "Diferenta") {
+		t.Errorf("the Diferenta line is still printed, got:\n%s", text)
+	}
+	if strings.Contains(text, "576.88") {
+		t.Errorf("the stored difference reached the printed page, got:\n%s", text)
+	}
+}
+
+// TestRenderIntroWording pins the sentence above the tables.
+func TestRenderIntroWording(t *testing.T) {
+	out, err := Render(model.Document{Nr: 1, Data: "2026-09-07", DocumentReferinta: "4821"}, "Unitate")
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	text := extractPDFText(t, out)
+
+	if !strings.Contains(text, "documentul nr 4821 s-au obtinut urmatoarele sortimente") {
+		t.Errorf("intro line does not read as expected, got:\n%s", text)
+	}
+	if strings.Contains(text, "______") || strings.Contains(text, "sau *") {
+		t.Errorf("the old \"sau * ______\" wording is still printed, got:\n%s", text)
+	}
+}

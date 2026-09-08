@@ -47,6 +47,10 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
           <input id="s-unitate" value="${escapeHtml(settings.unitateNume)}" />
         </div>
         <div class="field">
+          <label for="s-gestiune">Gestiune implicită</label>
+          <input id="s-gestiune" value="${escapeHtml(settings.gestiune)}" />
+        </div>
+        <div class="field">
           <label for="s-nextnr">Următorul NR</label>
           <input id="s-nextnr" class="num" type="number" min="1" step="1" value="${settings.nextNr}" />
         </div>
@@ -157,6 +161,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
   /** Copies every input's current value back into settings and products. */
   function readForm(): void {
     settings.unitateNume = (outlet.querySelector('#s-unitate') as HTMLInputElement).value;
+    settings.gestiune = (outlet.querySelector('#s-gestiune') as HTMLInputElement).value;
     // Number(...) || 1 alone would let a negative value (e.g. -3) through
     // unchanged, since -3 is truthy; only "" / NaN fall back to 1 that way.
     const rawNextNr = Number((outlet.querySelector('#s-nextnr') as HTMLInputElement).value);

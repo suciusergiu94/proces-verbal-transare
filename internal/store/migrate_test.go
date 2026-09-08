@@ -298,3 +298,67 @@ func TestOpenDoesNotOverwriteProcentDinIntrareOnLaterStarts(t *testing.T) {
 			reopened[0].ProcentDinIntrare)
 	}
 }
+
+// TestOpenBackfillsTheDefaultGestiuneFromTheNewestDocument checks the v4
+// upgrade. An install that predates the setting already has an answer for what
+// its default should be — the gestiune a new draft used to copy from the
+// previous document — and must get that rather than the value a fresh install
+// is seeded with.
+func TestOpenBackfillsTheDefaultGestiuneFromTheNewestDocument(t *testing.T) {
+	path := writeV1Database(t)
+
+	// Deliberately not the seeded default, so the value can only have reached
+	// the settings from the stored document.
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE documents SET gestiune = 'Magazin Ocolis'`); err != nil {
+		t.Fatalf("set the stored gestiune: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on a v1 database: %v", err)
+	}
+	defer s.Close()
+
+	settings, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if settings.Gestiune != "Magazin Ocolis" {
+		t.Errorf("settings.Gestiune = %q, want the newest document's gestiune", settings.Gestiune)
+	}
+}
+
+// TestOpenLeavesTheDefaultGestiuneEmptyWithNothingToCarryOver checks that the
+// v4 backfill does not invent a default for a database that has no documents
+// to take one from. Setări is where the user says what it should be.
+func TestOpenLeavesTheDefaultGestiuneEmptyWithNothingToCarryOver(t *testing.T) {
+	path := writeV1Database(t)
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM documents`); err != nil {
+		t.Fatalf("empty the documents table: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on a v1 database: %v", err)
+	}
+	defer s.Close()
+
+	settings, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if settings.Gestiune != "" {
+		t.Errorf("settings.Gestiune = %q, want empty", settings.Gestiune)
+	}
+}

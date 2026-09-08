@@ -56,7 +56,7 @@ func drawHeader(pdf *fpdf.Fpdf, doc model.Document, unitateNume string) {
 	pdf.CellFormat(190, 6, "Intocmit in data de "+formatDate(doc.Data), "", 1, "L", false, 0, "")
 	pdf.CellFormat(
 		190, 6,
-		"Din materia prima primita cu documentul nr "+Fold(doc.DocumentReferinta)+" sau * ______ urmatoarele sortimente",
+		"Din materia prima primita cu documentul nr "+Fold(doc.DocumentReferinta)+" s-au obtinut urmatoarele sortimente",
 		"", 1, "L", false, 0, "",
 	)
 	pdf.Ln(3)
@@ -204,10 +204,15 @@ func drawFooter(pdf *fpdf.Fpdf, doc model.Document) {
 	pdf.Ln(6)
 	pdf.SetFont("Arial", "", 10)
 
-	pdf.CellFormat(95, 6, fmt.Sprintf("Diferenta %s %s", tipLabel(doc.DiferentaTip), num(doc.DiferentaValoare)), "", 0, "L", false, 0, "")
+	// The gestiune is charged with everything the butchering produced, so the
+	// figure here is the "ce iese" grand total with TVA, not the gap between
+	// the two tables. It is summed from the rows being printed rather than
+	// read from doc.IncarcaDescarcaValoare — that field still holds the
+	// difference, which is what the form shows on screen — so the line can
+	// never disagree with the table above it.
 	pdf.CellFormat(
-		95, 6,
-		fmt.Sprintf("Suma cu care se %s gestiunea %s", tipLabel(doc.IncarcaDescarcaTip), num(doc.IncarcaDescarcaValoare)),
+		190, 6,
+		fmt.Sprintf("Suma cu care se incarca gestiunea %s", num(calc.TotalsIesire(doc.Iesire).ValoareCuTVA)),
 		"", 1, "L", false, 0, "",
 	)
 
@@ -217,17 +222,6 @@ func drawFooter(pdf *fpdf.Fpdf, doc model.Document) {
 	pdf.CellFormat(64, 6, "Vizat compartiment productie", "", 1, "L", false, 0, "")
 	pdf.CellFormat(126, 6, "", "", 0, "L", false, 0, "")
 	pdf.CellFormat(64, 6, Fold(doc.VizatCompartimentProductie), "", 1, "L", false, 0, "")
-}
-
-// tipLabel renders a tip as the paper form's wording, or "..... / ....." when
-// the user left it blank.
-func tipLabel(tip string) string {
-	switch tip {
-	case "plus", "minus", "incarca", "descarca":
-		return tip
-	default:
-		return "............"
-	}
 }
 
 // num renders a money/quantity value, leaving zero blank the way the paper

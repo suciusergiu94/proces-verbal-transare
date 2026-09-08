@@ -103,27 +103,32 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 		Iesire:  []model.IesireRow{},
 	}
 
+	// The gestiune comes from the settings rather than from the previous
+	// document: a default that only ever repeated the last document would make
+	// a one-off change to one document stick to every document after it, which
+	// is the thing having a default is meant to prevent. The form still lets
+	// this document depart from it.
+	draft.Gestiune = settings.Gestiune
+
 	if hasLast {
-		draft.Gestiune = last.Gestiune
 		for i, r := range last.Intrare {
-			// The rate travels with the row: a line the user deliberately taxed
-			// at something other than the default keeps that rate when it is
-			// carried into the next document, alongside its prices.
+			// Only the shape of the delivery travels: the same lines, named
+			// and measured in the same units, taxed at the rate the user
+			// deliberately gave them. A line taxed at something other than
+			// the default keeps that rate rather than being reset to it.
 			//
-			// The quantity deliberately does not travel. What repeats between
-			// documents is the shape of the delivery — same products, same
-			// prices, same rates — while the weight is measured afresh every
-			// time. Carrying it over would start each document on a quantity
-			// that is wrong by definition, and because the "ce iese" split is
-			// derived from it, a forgotten field would quietly fill the whole
-			// second table with the previous carcass's numbers.
+			// Neither quantity nor price travels. Both are established afresh
+			// for every delivery — the carcass is weighed and the price is
+			// what was paid this time — so a value left over from the previous
+			// document is wrong by definition. The quantity matters most:
+			// the "ce iese" split is derived from it, so a field left
+			// unnoticed would quietly fill the whole second table with the
+			// previous carcass's numbers.
 			draft.Intrare = append(draft.Intrare, model.IntrareRow{
-				Pozitie:     i,
-				Denumire:    r.Denumire,
-				UM:          r.UM,
-				PretFaraTVA: r.PretFaraTVA,
-				PretCuTVA:   r.PretCuTVA,
-				CotaTVA:     r.CotaTVA,
+				Pozitie:  i,
+				Denumire: r.Denumire,
+				UM:       r.UM,
+				CotaTVA:  r.CotaTVA,
 			})
 		}
 	}
