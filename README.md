@@ -1,53 +1,44 @@
-# proces-verbal-transare
+# Proces Verbal de Transare
 
-A [Wails v2](https://wails.io) desktop app (Go backend + Vite/TypeScript frontend).
+Aplicație desktop pentru completarea, arhivarea și tipărirea procesului verbal
+de transare folosit de S.C. Largiana Carn S.R.L.
 
-## Prerequisites
+## Cerințe
 
-This project was scaffolded without network access to the Go module proxy, so
-dependencies haven't been fetched or verified yet. On your machine, with
-normal internet access, install:
+- Go 1.25+
+- Node 20+
+- Wails CLI v2 (`go install github.com/wailsapp/wails/v2/cmd/wails@latest`)
 
-- Go 1.21+: https://go.dev/dl/
-- Node.js 18+ (already present on this machine)
-- The Wails CLI:
-
-  ```bash
-  go install github.com/wailsapp/wails/v2/cmd/wails@latest
-  ```
-
-- Platform build tools for macOS: Xcode Command Line Tools (`xcode-select --install`)
-
-Then verify everything is in order:
-
-```bash
-wails doctor
-```
-
-## First-time setup
-
-```bash
-go mod tidy        # fetches Go dependencies and generates go.sum
-cd frontend
-npm install         # fetches frontend dependencies
-cd ..
-```
-
-## Development
+## Dezvoltare
 
 ```bash
 wails dev
 ```
 
-This starts the app with hot reload for the frontend, and regenerates the
-TypeScript bindings in `frontend/wailsjs/` from the `App` struct's Go methods
-(the versions checked in here are hand-written placeholders just so the
-frontend type-checks before your first `wails dev` run).
-
-## Production build
+## Teste
 
 ```bash
-wails build
+go test ./...
+cd frontend && npm test
 ```
 
-The binary is written to `build/bin/`.
+## Build
+
+```bash
+wails build                          # macOS
+wails build -platform windows/amd64  # Windows, de pe macOS
+```
+
+Ambele dependențe native (`modernc.org/sqlite`, `github.com/go-pdf/fpdf`) sunt
+pur Go, deci cross-compilarea nu are nevoie de un toolchain Windows.
+
+## Date
+
+Baza de date SQLite se creează la prima pornire în directorul de configurare al
+utilizatorului:
+
+- macOS: `~/Library/Application Support/proces-verbal-transare/data.db`
+- Windows: `%AppData%\proces-verbal-transare\data.db`
+
+La prima pornire se populează lista celor 19 produse de pe formularul tipărit;
+poate fi modificată din ecranul **Setări**.
