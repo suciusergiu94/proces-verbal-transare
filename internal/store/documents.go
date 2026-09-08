@@ -122,6 +122,11 @@ func (s *Store) iesireRows(documentID int64) ([]model.IesireRow, error) {
 func (s *Store) SaveDocument(d model.Document) (model.Document, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 
+	var templateID any
+	if d.TemplateID != nil {
+		templateID = *d.TemplateID
+	}
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return model.Document{}, fmt.Errorf("salvare document: %w", err)
@@ -130,11 +135,11 @@ func (s *Store) SaveDocument(d model.Document) (model.Document, error) {
 
 	if d.ID == 0 {
 		res, err := tx.Exec(
-			`INSERT INTO documents (nr, data, gestiune, document_referinta, diferenta_tip, diferenta_valoare,
-			         incarca_descarca_tip, incarca_descarca_valoare, gestionar, calculator,
-			         vizat_compartiment_productie, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			d.Nr, d.Data, d.Gestiune, d.DocumentReferinta, d.DiferentaTip, d.DiferentaValoare,
+			`INSERT INTO documents (template_id, nr, data, gestiune, document_referinta, diferenta_tip,
+			         diferenta_valoare, incarca_descarca_tip, incarca_descarca_valoare, gestionar,
+			         calculator, vizat_compartiment_productie, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			templateID, d.Nr, d.Data, d.Gestiune, d.DocumentReferinta, d.DiferentaTip, d.DiferentaValoare,
 			d.IncarcaDescarcaTip, d.IncarcaDescarcaValoare, d.Gestionar, d.Calculator,
 			d.VizatCompartimentProductie, now, now,
 		)
@@ -160,12 +165,12 @@ func (s *Store) SaveDocument(d model.Document) (model.Document, error) {
 		}
 	} else {
 		res, err := tx.Exec(
-			`UPDATE documents SET nr = ?, data = ?, gestiune = ?, document_referinta = ?,
+			`UPDATE documents SET template_id = ?, nr = ?, data = ?, gestiune = ?, document_referinta = ?,
 			        diferenta_tip = ?, diferenta_valoare = ?, incarca_descarca_tip = ?,
 			        incarca_descarca_valoare = ?, gestionar = ?, calculator = ?,
 			        vizat_compartiment_productie = ?, updated_at = ?
 			 WHERE id = ?`,
-			d.Nr, d.Data, d.Gestiune, d.DocumentReferinta, d.DiferentaTip, d.DiferentaValoare,
+			templateID, d.Nr, d.Data, d.Gestiune, d.DocumentReferinta, d.DiferentaTip, d.DiferentaValoare,
 			d.IncarcaDescarcaTip, d.IncarcaDescarcaValoare, d.Gestionar, d.Calculator,
 			d.VizatCompartimentProductie, now, d.ID,
 		)
@@ -232,11 +237,15 @@ func (s *Store) DeleteDocument(id int64) error {
 	return nil
 }
 
-// LastDocument returns the most recently saved document, if any. It is the
-// source of the prefilled "ce intra" rows on a new document.
-func (s *Store) LastDocument() (model.Document, bool, error) {
+// LastDocument returns the most recently saved document created from the given
+// template, if any. It is the source of the prefilled "ce intra" rows on a new
+// document, which is why it is scoped: a new calf document must not inherit the
+// row that names a pig carcass.
+func (s *Store) LastDocument(templateID int64) (model.Document, bool, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT id FROM documents ORDER BY id DESC LIMIT 1`).Scan(&id)
+	err := s.db.QueryRow(
+		`SELECT id FROM documents WHERE template_id = ? ORDER BY id DESC LIMIT 1`, templateID,
+	).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Document{}, false, nil
 	}

@@ -183,15 +183,18 @@ func TestGetDocumentMissing(t *testing.T) {
 
 func TestLastDocument(t *testing.T) {
 	s := newEmptyTestStore(t)
+	template := seededTemplate(t, s)
 
-	if _, ok, err := s.LastDocument(); err != nil || ok {
+	if _, ok, err := s.LastDocument(template.ID); err != nil || ok {
 		t.Errorf("LastDocument on empty store = ok %v, err %v; want false, nil", ok, err)
 	}
 
-	if _, err := s.SaveDocument(sampleDocument()); err != nil {
+	doc := sampleDocument()
+	doc.TemplateID = &template.ID
+	if _, err := s.SaveDocument(doc); err != nil {
 		t.Fatalf("SaveDocument: %v", err)
 	}
-	got, ok, err := s.LastDocument()
+	got, ok, err := s.LastDocument(template.ID)
 	if err != nil {
 		t.Fatalf("LastDocument: %v", err)
 	}
@@ -200,6 +203,115 @@ func TestLastDocument(t *testing.T) {
 	}
 	if len(got.Intrare) != 1 || got.Intrare[0].Denumire != "Carcasa porc f cap" {
 		t.Errorf("LastDocument intrare = %+v, want the saved row", got.Intrare)
+	}
+}
+
+func TestSaveDocumentRoundTripsTheTemplate(t *testing.T) {
+	s := newEmptyTestStore(t)
+	template := seededTemplate(t, s)
+
+	saved, err := s.SaveDocument(model.Document{
+		TemplateID: &template.ID,
+		Nr:         7,
+		Data:       "2026-09-08",
+		Gestiune:   "Magazin Bradet",
+	})
+	if err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
+	if saved.TemplateID == nil || *saved.TemplateID != template.ID {
+		t.Fatalf("saved.TemplateID = %v, want %d", saved.TemplateID, template.ID)
+	}
+
+	reread, err := s.GetDocument(saved.ID)
+	if err != nil {
+		t.Fatalf("GetDocument: %v", err)
+	}
+	if reread.TemplateID == nil || *reread.TemplateID != template.ID {
+		t.Errorf("reread.TemplateID = %v, want %d", reread.TemplateID, template.ID)
+	}
+}
+
+func TestSaveDocumentKeepsTheTemplateOnUpdate(t *testing.T) {
+	s := newEmptyTestStore(t)
+	template := seededTemplate(t, s)
+
+	saved, err := s.SaveDocument(model.Document{
+		TemplateID: &template.ID, Nr: 7, Data: "2026-09-08", Gestiune: "Magazin Bradet",
+	})
+	if err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
+	saved.Gestiune = "Altundeva"
+	updated, err := s.SaveDocument(saved)
+	if err != nil {
+		t.Fatalf("SaveDocument (update): %v", err)
+	}
+	if updated.TemplateID == nil || *updated.TemplateID != template.ID {
+		t.Errorf("updated.TemplateID = %v, want %d — the update dropped it", updated.TemplateID, template.ID)
+	}
+}
+
+// The "ce intra" prefill on a new document must come from a butchering of the
+// same kind. A pig's carcass row on a calf document would be wrong on the one
+// line that names what was cut up.
+func TestLastDocumentIsScopedToItsTemplate(t *testing.T) {
+	s := newEmptyTestStore(t)
+	templates, err := s.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	porc := templates[0]
+
+	templates = append(templates, model.Template{
+		Nume:     "Carcasa Vitel",
+		Products: []model.Product{{Denumire: "Antricot", UM: "Kg", ProcentDinIntrare: 100}},
+	})
+	if err := s.SaveTemplates(templates); err != nil {
+		t.Fatalf("SaveTemplates: %v", err)
+	}
+	stored, err := s.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	vitel := stored[1]
+
+	if _, err := s.SaveDocument(model.Document{
+		TemplateID: &porc.ID, Nr: 1, Data: "2026-09-01", Gestiune: "G",
+		Intrare: []model.IntrareRow{{Denumire: "Carcasa Porc", UM: "Kg", Cantitate: 100}},
+	}); err != nil {
+		t.Fatalf("SaveDocument porc: %v", err)
+	}
+	if _, err := s.SaveDocument(model.Document{
+		TemplateID: &vitel.ID, Nr: 2, Data: "2026-09-02", Gestiune: "G",
+		Intrare: []model.IntrareRow{{Denumire: "Carcasa Vitel", UM: "Kg", Cantitate: 200}},
+	}); err != nil {
+		t.Fatalf("SaveDocument vitel: %v", err)
+	}
+
+	last, ok, err := s.LastDocument(porc.ID)
+	if err != nil {
+		t.Fatalf("LastDocument: %v", err)
+	}
+	if !ok {
+		t.Fatal("LastDocument(porc) found nothing")
+	}
+	if last.Intrare[0].Denumire != "Carcasa Porc" {
+		t.Errorf("intrare[0] = %q, want %q — it picked up the calf document",
+			last.Intrare[0].Denumire, "Carcasa Porc")
+	}
+}
+
+func TestLastDocumentOnATemplateWithNoDocuments(t *testing.T) {
+	s := newEmptyTestStore(t)
+	template := seededTemplate(t, s)
+
+	_, ok, err := s.LastDocument(template.ID)
+	if err != nil {
+		t.Fatalf("LastDocument: %v", err)
+	}
+	if ok {
+		t.Error("LastDocument found a document in an empty store")
 	}
 }
 

@@ -85,16 +85,18 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 		return model.Document{}, fmt.Errorf("niciun sablon disponibil")
 	}
 	products := templates[0].Products
-	last, hasLast, err := a.store.LastDocument()
+	templateID := templates[0].ID
+	last, hasLast, err := a.store.LastDocument(templateID)
 	if err != nil {
 		return model.Document{}, err
 	}
 
 	draft := model.Document{
-		Nr:      settings.NextNr,
-		Data:    time.Now().Format("2006-01-02"),
-		Intrare: []model.IntrareRow{},
-		Iesire:  []model.IesireRow{},
+		TemplateID: &templateID,
+		Nr:         settings.NextNr,
+		Data:       time.Now().Format("2006-01-02"),
+		Intrare:    []model.IntrareRow{},
+		Iesire:     []model.IesireRow{},
 	}
 
 	// The gestiune comes from the settings rather than from the previous
