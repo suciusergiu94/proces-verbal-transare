@@ -74,6 +74,18 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestOpenSetsUserVersion(t *testing.T) {
+	s := newTestStore(t)
+
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatalf("PRAGMA user_version: %v", err)
+	}
+	if version != 1 {
+		t.Errorf("user_version = %d, want 1", version)
+	}
+}
+
 func TestSettingsDefaultsAndRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 

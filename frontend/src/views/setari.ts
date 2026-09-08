@@ -109,7 +109,11 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
   /** Copies every input's current value back into settings and products. */
   function readForm(): void {
     settings.unitateNume = (outlet.querySelector('#s-unitate') as HTMLInputElement).value;
-    settings.nextNr = Number((outlet.querySelector('#s-nextnr') as HTMLInputElement).value) || 1;
+    // Number(...) || 1 alone would let a negative value (e.g. -3) through
+    // unchanged, since -3 is truthy; only "" / NaN fall back to 1 that way.
+    const rawNextNr = Number((outlet.querySelector('#s-nextnr') as HTMLInputElement).value);
+    const truncatedNextNr = Math.trunc(rawNextNr);
+    settings.nextNr = Number.isFinite(truncatedNextNr) && truncatedNextNr >= 1 ? truncatedNextNr : 1;
 
     outlet.querySelectorAll<HTMLTableRowElement>('tbody tr[data-index]').forEach((tr) => {
       const product = products[Number(tr.dataset.index)];

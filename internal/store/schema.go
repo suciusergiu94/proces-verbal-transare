@@ -100,6 +100,21 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	// Stamp a schema version marker so a future migration can tell a v1
+	// database (this one) apart from whatever comes after it. A fresh or
+	// already-stamped database reports a non-zero user_version, so this is a
+	// one-time move: future migrations should switch on the current value of
+	// PRAGMA user_version rather than re-checking for zero.
+	var version int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return err
+	}
+	if version == 0 {
+		if _, err := db.Exec(`PRAGMA user_version = 1`); err != nil {
+			return err
+		}
+	}
+
 	var seeded int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM settings WHERE id = 1`).Scan(&seeded); err != nil {
 		return err

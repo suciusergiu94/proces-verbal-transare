@@ -133,27 +133,15 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 }
 
 // SaveDocument creates or updates a document. Creating one with a number at or
-// above the current counter advances the counter past it.
+// above the current counter advances the counter past it. The counter bump is
+// performed inside the store's own save transaction (see
+// store.Store.SaveDocument), so the document and the counter are committed
+// atomically: there is no window where a save can report failure for a
+// document that was actually persisted.
 func (a *App) SaveDocument(doc model.Document) (model.Document, error) {
-	isNew := doc.ID == 0
-
 	saved, err := a.store.SaveDocument(doc)
 	if err != nil {
 		return model.Document{}, err
-	}
-	if !isNew {
-		return saved, nil
-	}
-
-	settings, err := a.store.GetSettings()
-	if err != nil {
-		return model.Document{}, err
-	}
-	if saved.Nr >= settings.NextNr {
-		settings.NextNr = saved.Nr + 1
-		if err := a.store.SaveSettings(settings); err != nil {
-			return model.Document{}, err
-		}
 	}
 	return saved, nil
 }

@@ -2231,11 +2231,21 @@ function markActive(el: HTMLElement): void {
 
 /** Escapes text that goes into an innerHTML template. */
 export function escapeHtml(value: string): string {
-  const div = document.createElement('div');
-  div.textContent = value;
-  return div.innerHTML;
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 ```
+
+**Corrected by the final whole-branch review (Critical 2):** the original snippet here used
+`div.textContent = value; return div.innerHTML;`, which escapes `&`, `<`, `>` but *not* quotes.
+Almost every call site places the result inside an HTML attribute
+(`value="${escapeHtml(...)}"`), so an unescaped `"` let user data (e.g. `Costita "afumata"`)
+break out of the attribute and truncate, or inject an arbitrary attribute/event handler. Use the
+explicit replacement chain above, ampersand first.
 
 - [ ] **Step 9: Replace main.ts with the shell**
 
@@ -2829,17 +2839,33 @@ export async function renderDocumentView(
 
   function onInput(event: Event): void {
     const target = event.target as HTMLElement;
-    readForm();
 
-    // Retyping either total means the user is overriding the computed value, so
-    // only refresh the footer when the edit came from somewhere else.
-    const isFooterOverride =
-      target.id === 'f-dif-val' ||
-      target.id === 'f-dif-tip' ||
-      target.id === 'f-id-val' ||
-      target.id === 'f-id-tip';
-    recompute(!isFooterOverride);
+    // Typing into any of the four footer controls marks the override sticky
+    // for the rest of the view's lifetime, not just for this one event.
+    if (isFooterControl(target)) {
+      footerOverridden = true;
+    }
+
+    readForm();
+    recompute(true);
   }
+
+  function isFooterControl(el: HTMLElement): boolean {
+    return (
+      el.id === 'f-dif-val' || el.id === 'f-dif-tip' || el.id === 'f-id-val' || el.id === 'f-id-tip'
+    );
+  }
+```
+
+**Corrected by the final whole-branch review (Critical 1):** the original snippet computed
+`isFooterOverride` fresh from `event.target` on every `input` event, so it only protected the
+footer from the keystroke that landed directly on it. Editing any *other* field (e.g. Gestionar)
+afterwards called `recompute(true)` and silently overwrote a saved manual footer correction. The
+override must be a sticky, view-scoped `footerOverridden` flag (initialised from whether a loaded
+saved document's stored footer already differs from what its rows compute, then latched `true` by
+any edit to a footer control) that every call to `recompute` checks, not a per-event predicate.
+
+```ts
 
   /** Copies every input's current value back into doc. */
   function readForm(): void {
@@ -2887,7 +2913,9 @@ export async function renderDocumentView(
     setTotal('iesire-faraTva', iesire.valoareFaraTva);
     setTotal('iesire-cuTva', iesire.valoareCuTva);
 
-    if (!refreshFooter) return;
+    // footerOverridden gates every caller (initial render, add/remove row, and
+    // onInput) with one check, instead of each needing its own predicate.
+    if (!refreshFooter || footerOverridden) return;
 
     const dif = diferenta(iesire.valoareCuTva, intrare.valoareCuTva);
     const inc = incarcaDescarca(iesire.valoareCuTva, intrare.valoareCuTva);

@@ -50,9 +50,20 @@ function markActive(el: HTMLElement): void {
   });
 }
 
-/** Escapes text that goes into an innerHTML template. */
+/**
+ * Escapes text that goes into an innerHTML template. Almost every call site
+ * places the result inside an HTML attribute (`value="${escapeHtml(...)}"`),
+ * so quotes must be escaped too — a `div.textContent`/`innerHTML` round trip
+ * escapes `&`, `<` and `>` but leaves `"` and `'` untouched, which lets a
+ * quote in user data break out of the attribute (corrupting the saved value)
+ * or inject an arbitrary attribute/event handler. Ampersand must be escaped
+ * first so the other replacements' `&...;` sequences are not re-escaped.
+ */
 export function escapeHtml(value: string): string {
-  const div = document.createElement('div');
-  div.textContent = value;
-  return div.innerHTML;
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

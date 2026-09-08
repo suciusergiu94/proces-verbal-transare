@@ -13,6 +13,16 @@ import { formatNumber, parseNumber } from '../format';
 import { navigate } from '../router';
 import { escapeHtml } from '../sidebar';
 
+// documentInputAbort holds the AbortController for the currently-attached
+// `input` listener. renderDocumentView runs afresh on every hashchange *and*
+// on every save (navigate() re-invokes the router even when the hash is
+// unchanged), but `outlet` is a single long-lived element created once in
+// main.ts. Without this, each run would attach another listener that is
+// never removed — leaking handlers, and (worse) leaving a stale document
+// handler attached when the user navigates to an unrelated view such as
+// Setări, where it throws on the first keystroke.
+let documentInputAbort: AbortController | undefined;
+
 /** Renders the document form. Pass no id for a new document. */
 export async function renderDocumentView(
   outlet: HTMLElement,
@@ -21,6 +31,18 @@ export async function renderDocumentView(
 ): Promise<void> {
   let doc: Document;
   let unitate = '';
+
+  // Sticky override flag: once true, nothing in this view rewrites the footer
+  // (Diferență / Suma cu care se încarcă-descarcă) again for the life of the
+  // view. Those two fields are pre-filled from a computation but are
+  // deliberately editable — the paper form is hand-corrected there — so a
+  // saved correction must survive every later edit, not just the initial
+  // paint. Do not "simplify" this into a per-event check (e.g. "is this
+  // input event's target a footer control?"): that only protects the footer
+  // from the keystroke that lands directly on it, and any subsequent edit to
+  // an unrelated field (Gestionar, a row...) would silently recompute and
+  // overwrite the saved correction.
+  let footerOverridden = false;
 
   try {
     const [loaded, settings] = await Promise.all([
@@ -35,12 +57,34 @@ export async function renderDocumentView(
     return;
   }
 
-  // Attached once per view (not per renderAll), since outlet survives innerHTML rewrites.
-  outlet.addEventListener('input', onInput);
+  // A saved document whose stored footer values differ from what the current
+  // rows would compute means the user hand-corrected them; start overridden
+  // so that correction is never silently recomputed away. A brand-new draft
+  // starts un-overridden, since its footer is legitimately still "pre-filled".
+  footerOverridden = doc.id !== 0 && footerDiffersFromComputed();
+
+  // Replace any listener left by a previous renderDocumentView invocation on
+  // this same outlet (see the comment on documentInputAbort above).
+  documentInputAbort?.abort();
+  documentInputAbort = new AbortController();
+  outlet.addEventListener('input', onInput, { signal: documentInputAbort.signal });
 
   // A saved document's stored footer values must survive a reload untouched; only a
   // brand-new draft should have its footer computed from (empty) rows on first render.
   renderAll(doc.id === 0);
+
+  function footerDiffersFromComputed(): boolean {
+    const intrare = totals(doc.intrare);
+    const iesire = totals(doc.iesire);
+    const dif = diferenta(iesire.valoareCuTva, intrare.valoareCuTva);
+    const inc = incarcaDescarca(iesire.valoareCuTva, intrare.valoareCuTva);
+    return (
+      doc.diferentaTip !== dif.tip ||
+      doc.diferentaValoare !== dif.valoare ||
+      doc.incarcaDescarcaTip !== inc.tip ||
+      doc.incarcaDescarcaValoare !== inc.valoare
+    );
+  }
 
   function renderAll(refreshFooter = true): void {
     outlet.innerHTML = `
@@ -247,16 +291,22 @@ export async function renderDocumentView(
 
   function onInput(event: Event): void {
     const target = event.target as HTMLElement;
-    readForm();
 
-    // Retyping either total means the user is overriding the computed value, so
-    // only refresh the footer when the edit came from somewhere else.
-    const isFooterOverride =
-      target.id === 'f-dif-val' ||
-      target.id === 'f-dif-tip' ||
-      target.id === 'f-id-val' ||
-      target.id === 'f-id-tip';
-    recompute(!isFooterOverride);
+    // Typing into any of the four footer controls marks the override sticky
+    // (see the footerOverridden comment above) for the rest of the view's
+    // lifetime, not just for this one event.
+    if (isFooterControl(target)) {
+      footerOverridden = true;
+    }
+
+    readForm();
+    recompute(true);
+  }
+
+  function isFooterControl(el: HTMLElement): boolean {
+    return (
+      el.id === 'f-dif-val' || el.id === 'f-dif-tip' || el.id === 'f-id-val' || el.id === 'f-id-tip'
+    );
   }
 
   /** Copies every input's current value back into doc. */
@@ -286,7 +336,7 @@ export async function renderDocumentView(
     });
   }
 
-  /** Refreshes the computed cells, and the footer unless the user overrode it. */
+  /** Refreshes the computed cells, and the footer unless it has been overridden. */
   function recompute(refreshFooter = true): void {
     outlet.querySelectorAll<HTMLTableRowElement>('tr[data-table]').forEach((tr) => {
       const index = Number(tr.dataset.index);
@@ -305,7 +355,11 @@ export async function renderDocumentView(
     setTotal('iesire-faraTva', iesire.valoareFaraTva);
     setTotal('iesire-cuTva', iesire.valoareCuTva);
 
-    if (!refreshFooter) return;
+    // footerOverridden is checked here (not just at the onInput call site) so
+    // that every caller of recompute — the initial render, add/remove row,
+    // and onInput — is covered by one gate instead of each needing to know
+    // about the override.
+    if (!refreshFooter || footerOverridden) return;
 
     const dif = diferenta(iesire.valoareCuTva, intrare.valoareCuTva);
     const inc = incarcaDescarca(iesire.valoareCuTva, intrare.valoareCuTva);
@@ -319,26 +373,48 @@ export async function renderDocumentView(
     (outlet.querySelector('#f-id-val') as HTMLInputElement).value = formatNumber(inc.valoare);
   }
 
-  async function onSave(): Promise<void> {
+  /**
+   * Validates and saves the current form, updating `doc` to the stored
+   * version on success. Shared by onSave and onPrint so that printing always
+   * exports what is on screen rather than whatever was last persisted (see
+   * onPrint).
+   */
+  async function saveCurrentForm(): Promise<boolean> {
     readForm();
     if (doc.nr <= 0) {
       window.alert('Completați numărul documentului (NR).');
-      return;
+      return false;
     }
     if (!doc.data) {
       window.alert('Completați data documentului.');
-      return;
+      return false;
     }
     try {
-      const saved = await SaveDocument(doc);
+      doc = await SaveDocument(doc);
       await refreshSidebar();
-      navigate(`#/document/${saved.id}`);
+      return true;
     } catch (err) {
       showError('Documentul nu a putut fi salvat', err);
+      return false;
     }
   }
 
+  async function onSave(): Promise<void> {
+    if (await saveCurrentForm()) {
+      navigate(`#/document/${doc.id}`);
+    }
+  }
+
+  // ExportPDF re-reads the document from SQLite by id, so printing without
+  // saving first would silently export stale data for any edit made since
+  // the last save. Rather than warn and make the user click twice, we save
+  // automatically before exporting — the print button is only enabled once
+  // the document already exists (doc.id !== 0), so this is always an update
+  // to an already-saved document, never a surprise first save. This keeps
+  // "Printează" a single click, which matters for a form whose whole purpose
+  // is to be printed and signed.
   async function onPrint(): Promise<void> {
+    if (!(await saveCurrentForm())) return;
     try {
       const path = await ExportPDF(doc.id);
       if (path === '') return; // dialog cancelled
@@ -359,7 +435,12 @@ export async function renderDocumentView(
   }
 
   function value(selector: string): string {
-    return (outlet.querySelector(selector) as HTMLInputElement | HTMLSelectElement).value;
+    // Null-safe as cheap insurance: with the AbortController fix above this
+    // view's own elements should always be present when its own listener
+    // fires, but a stale/mismatched handler must degrade to '' rather than
+    // throw and break an unrelated view.
+    const el = outlet.querySelector(selector) as HTMLInputElement | HTMLSelectElement | null;
+    return el ? el.value : '';
   }
 
   function fieldValue(tr: HTMLTableRowElement, field: string): string {

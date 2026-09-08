@@ -129,6 +129,12 @@ func totalRow(t calc.Totals) []string {
 // for the surrounding header/footer, which would need extra state to
 // suppress there.
 func drawTable(pdf *fpdf.Fpdf, table tableCells) {
+	// The header row itself must not be split across a page break either: if
+	// it were left unguarded, a table starting near the bottom margin could
+	// have fpdf's own auto-break fire mid-header-row. Unlike ensureRowFits,
+	// this does not also redraw the header on break — the caller draws it
+	// right after, so redrawing here would duplicate it.
+	ensureHeaderFits(pdf)
 	drawTableHeader(pdf, table.header)
 
 	pdf.SetFont("Arial", "", 8)
@@ -179,6 +185,18 @@ func ensureRowFits(pdf *fpdf.Fpdf, header []string) {
 	if pdf.GetY()+rowHeight > pageHeight-bottom {
 		pdf.AddPage()
 		drawTableHeader(pdf, header)
+	}
+}
+
+// ensureHeaderFits forces a page break if the header row itself would not fit
+// above the bottom margin. It does not draw the header — the caller does
+// that immediately after — so it never duplicates it the way ensureRowFits'
+// redraw-on-break would.
+func ensureHeaderFits(pdf *fpdf.Fpdf) {
+	_, pageHeight := pdf.GetPageSize()
+	_, _, _, bottom := pdf.GetMargins()
+	if pdf.GetY()+rowHeight > pageHeight-bottom {
+		pdf.AddPage()
 	}
 }
 

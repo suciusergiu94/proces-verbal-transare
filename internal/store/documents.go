@@ -139,6 +139,20 @@ func (s *Store) SaveDocument(d model.Document) (model.Document, error) {
 		if d.ID, err = res.LastInsertId(); err != nil {
 			return model.Document{}, fmt.Errorf("adaugare document: %w", err)
 		}
+
+		// Bump next_nr in the same transaction as the insert so the counter can
+		// never fall out of sync with a committed document: either both the
+		// document and the counter advance together, or (on any failure) the
+		// whole transaction rolls back and next_nr is untouched.
+		var nextNr int
+		if err := tx.QueryRow(`SELECT next_nr FROM settings WHERE id = 1`).Scan(&nextNr); err != nil {
+			return model.Document{}, fmt.Errorf("citire contor nr: %w", err)
+		}
+		if d.Nr >= nextNr {
+			if _, err := tx.Exec(`UPDATE settings SET next_nr = ? WHERE id = 1`, d.Nr+1); err != nil {
+				return model.Document{}, fmt.Errorf("actualizare contor nr: %w", err)
+			}
+		}
 	} else {
 		res, err := tx.Exec(
 			`UPDATE documents SET nr = ?, data = ?, gestiune = ?, document_referinta = ?,
