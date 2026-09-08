@@ -60,16 +60,6 @@ func (a *App) SaveSettings(s model.Settings) error {
 	return a.store.SaveSettings(s)
 }
 
-// ListProducts returns the "ce iese" product list in display order.
-func (a *App) ListProducts() ([]model.Product, error) {
-	return a.store.ListProducts()
-}
-
-// SaveProducts replaces the product list with the given one.
-func (a *App) SaveProducts(products []model.Product) error {
-	return a.store.SaveProducts(products)
-}
-
 // ListDocuments returns the sidebar history, newest first.
 func (a *App) ListDocuments() ([]model.DocumentSummary, error) {
 	return a.store.ListDocuments()
@@ -87,10 +77,14 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 	if err != nil {
 		return model.Document{}, err
 	}
-	products, err := a.store.ListProducts()
+	templates, err := a.store.ListTemplates()
 	if err != nil {
 		return model.Document{}, err
 	}
+	if len(templates) == 0 {
+		return model.Document{}, fmt.Errorf("niciun sablon disponibil")
+	}
+	products := templates[0].Products
 	last, hasLast, err := a.store.LastDocument()
 	if err != nil {
 		return model.Document{}, err

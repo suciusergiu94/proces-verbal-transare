@@ -16,12 +16,26 @@ type Settings struct {
 	Gestiune string `json:"gestiune"`
 }
 
-// Product is one entry of the fixed "ce iese" product list.
+// Template is one named "ce iese" profile: a list of products and the ratios
+// they come out of a carcass in. A document is created from a template and
+// remembers it, so the ratios it yields can be written back to the right one.
+type Template struct {
+	ID     int64  `json:"id"`
+	Nume   string `json:"nume"`
+	Ordine int    `json:"ordine"`
+	// Products is the template's "ce iese" list, in display order. It is
+	// carried on the template rather than fetched separately because the two
+	// are always read and written together.
+	Products []Product `json:"products"`
+}
+
+// Product is one entry of a template's "ce iese" product list.
 type Product struct {
-	ID        int64   `json:"id"`
-	Denumire  string  `json:"denumire"`
-	UM        string  `json:"um"`
-	PretCuTVA float64 `json:"pretCuTva"`
+	ID         int64   `json:"id"`
+	TemplateID int64   `json:"templateId"`
+	Denumire   string  `json:"denumire"`
+	UM         string  `json:"um"`
+	PretCuTVA  float64 `json:"pretCuTva"`
 	// ProcentDinIntrare is the share of what goes in that this product comes
 	// out as, in percent (9.248, not 0.09248), to three decimals. Across the
 	// whole list it sums to 100: everything that goes in has to come out as
@@ -60,8 +74,13 @@ type IesireRow struct {
 
 // Document is a full proces verbal with both tables.
 type Document struct {
-	ID                         int64        `json:"id"`
-	Nr                         int          `json:"nr"`
+	ID int64 `json:"id"`
+	Nr int   `json:"nr"`
+	// TemplateID is the template this document was created from. It is nil for
+	// a document whose template has since been deleted: the rows below keep
+	// their own denumire, UM and price, so the document stays complete, but it
+	// no longer has ratios to refill its quantities from.
+	TemplateID                 *int64       `json:"templateId"`
 	Data                       string       `json:"data"` // ISO YYYY-MM-DD
 	Gestiune                   string       `json:"gestiune"`
 	DocumentReferinta          string       `json:"documentReferinta"`

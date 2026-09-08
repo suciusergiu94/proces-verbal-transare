@@ -2,12 +2,14 @@ package store
 
 import (
 	"database/sql"
-	"errors"
+	"fmt"
 	"time"
 
 	"proces-verbal-transare/internal/calc"
 	"proces-verbal-transare/internal/model"
 )
+
+const schemaVersion = 5
 
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS settings (
@@ -18,8 +20,15 @@ CREATE TABLE IF NOT EXISTS settings (
   gestiune TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS templates (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nume TEXT NOT NULL,
+  ordine INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS products (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
   denumire TEXT NOT NULL,
   um TEXT NOT NULL DEFAULT 'Kg',
   pret_cu_tva REAL NOT NULL DEFAULT 0,
@@ -29,6 +38,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS documents (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  template_id INTEGER REFERENCES templates(id) ON DELETE SET NULL,
   nr INTEGER NOT NULL,
   data TEXT NOT NULL,
   gestiune TEXT NOT NULL,
@@ -69,9 +79,16 @@ CREATE TABLE IF NOT EXISTS document_iesire_rows (
   cota_tva REAL NOT NULL DEFAULT 11
 );
 
+CREATE INDEX IF NOT EXISTS idx_products_template ON products(template_id, ordine);
 CREATE INDEX IF NOT EXISTS idx_intrare_document ON document_intrare_rows(document_id, pozitie);
 CREATE INDEX IF NOT EXISTS idx_iesire_document ON document_iesire_rows(document_id, pozitie);
 `
+
+// defaultTemplateNume is the template a fresh install is seeded with. It is
+// copied onto the "ce intra" row of a document created from a template that
+// has no documents yet, so it reads as the thing being butchered rather than
+// as a category.
+const defaultTemplateNume = "Carcasa Porc"
 
 // defaultUnitate is the company printed on the paper form.
 const defaultUnitate = "S.C. Largiana Carn S.R.L."
@@ -183,110 +200,38 @@ var seedIesirePreturiFaraTVA = []float64{
 	22.52, 18.83, 19.73, 16.67, 10.81, 5.86, 5.86, 1.8, 1.8, 0,
 }
 
-// hasColumn reports whether a table already carries a column.
-func hasColumn(db *sql.DB, table, column string) (bool, error) {
-	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
-}
-
-// migrate creates the schema and seeds first-run data. It is safe to call on
-// every startup: seeding happens only when the settings row is absent, so a
-// user who deleted every product does not get them back on the next launch.
+// migrate brings the database to schemaVersion and seeds first-run data. It is
+// safe to call on every startup: seeding happens only when the settings row is
+// absent, so a user who deleted every product does not get them back.
 func migrate(db *sql.DB) error {
-	if _, err := db.Exec(schemaSQL); err != nil {
-		return err
-	}
-
-	// v2 added the TVA rate: one default in settings and one per document row.
-	// CREATE TABLE IF NOT EXISTS above is a no-op on a database that already
-	// has the tables, so a v1 database needs the columns added by hand. The
-	// columns are added on absence rather than on the version marker, which
-	// makes the upgrade safe to run against a database in any state — including
-	// one interrupted halfway through a previous attempt.
-	for _, c := range []struct{ table, column, ddl string }{
-		{"settings", "cota_tva", `ALTER TABLE settings ADD COLUMN cota_tva REAL NOT NULL DEFAULT 11`},
-		{"document_intrare_rows", "cota_tva", `ALTER TABLE document_intrare_rows ADD COLUMN cota_tva REAL NOT NULL DEFAULT 11`},
-		{"document_iesire_rows", "cota_tva", `ALTER TABLE document_iesire_rows ADD COLUMN cota_tva REAL NOT NULL DEFAULT 11`},
-	} {
-		has, err := hasColumn(db, c.table, c.column)
-		if err != nil {
-			return err
-		}
-		if has {
-			continue
-		}
-		if _, err := db.Exec(c.ddl); err != nil {
-			return err
-		}
-	}
-
-	// v3 added the carcass ratios. The column arrives empty, which would leave
-	// an install that has been in use looking at a list of zeros, so it is
-	// filled in from the oldest stored proces verbal — the same figures a fresh
-	// install is seeded with, taken from the user's own first butchering rather
-	// than from ours. This runs on the column's absence, so it happens exactly
-	// once: a later start must not overwrite ratios the user has since edited.
-	hasProcent, err := hasColumn(db, "products", "procent_din_intrare")
-	if err != nil {
-		return err
-	}
-	if !hasProcent {
-		if _, err := db.Exec(
-			`ALTER TABLE products ADD COLUMN procent_din_intrare REAL NOT NULL DEFAULT 0`,
-		); err != nil {
-			return err
-		}
-		if err := backfillProcente(db); err != nil {
-			return err
-		}
-	}
-
-	// v4 added the default gestiune. Until now a new document took its gestiune
-	// from the previous one, so an install that has been in use already has an
-	// answer for what the default should be: the gestiune of its newest
-	// document. Seeding the column from ours instead would hand a user who has
-	// never worked in Magazin Bradet a default they have to correct on every
-	// document. Like the v3 backfill this runs on the column's absence, so it
-	// happens exactly once and never overwrites a default the user has edited.
-	hasGestiune, err := hasColumn(db, "settings", "gestiune")
-	if err != nil {
-		return err
-	}
-	if !hasGestiune {
-		if _, err := db.Exec(
-			`ALTER TABLE settings ADD COLUMN gestiune TEXT NOT NULL DEFAULT ''`,
-		); err != nil {
-			return err
-		}
-		if err := backfillGestiune(db); err != nil {
-			return err
-		}
-	}
-
-	// Stamp the schema version so a future migration can tell this shape apart
-	// from whatever comes after it. Future migrations should switch on the
-	// current value of PRAGMA user_version.
 	var version int
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version < 4 {
-		if _, err := db.Exec(`PRAGMA user_version = 4`); err != nil {
+
+	// A database stamped below the current version was written by a
+	// pre-release build, whose products table has no template_id and which has
+	// no templates table at all — every query below would fail on it. The app
+	// has never shipped, so there is nothing in such a database worth an
+	// upgrade path that would then have to be carried forever; it is dropped
+	// and reseeded instead.
+	//
+	// Version 0 is a database that does not exist yet, which needs no reset.
+	//
+	// This is a pre-release convenience and nothing more. The first time a
+	// released database matters, this branch must be replaced by a real
+	// migration rather than extended.
+	if version > 0 && version < schemaVersion {
+		if err := dropAllTables(db); err != nil {
 			return err
 		}
+	}
+
+	if _, err := db.Exec(schemaSQL); err != nil {
+		return err
+	}
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return err
 	}
 
 	var seeded int
@@ -296,7 +241,34 @@ func migrate(db *sql.DB) error {
 	if seeded > 0 {
 		return nil
 	}
+	return seed(db)
+}
 
+// dropAllTables empties the database. The tables are dropped children-first so
+// no foreign key is left dangling mid-drop, and every drop is IF EXISTS
+// because the shape being dropped is an older one that may be missing some of
+// them.
+func dropAllTables(db *sql.DB) error {
+	for _, table := range []string{
+		"document_iesire_rows",
+		"document_intrare_rows",
+		"documents",
+		"products",
+		"templates",
+		"settings",
+	} {
+		if _, err := db.Exec(`DROP TABLE IF EXISTS ` + table); err != nil {
+			return fmt.Errorf("stergere tabel %s: %w", table, err)
+		}
+	}
+	return nil
+}
+
+// seed writes the first-run contents: the settings row, one template holding
+// the 19 products printed on the paper form, and the proces verbal those
+// products were first filled in on. All of it in one transaction, so a fresh
+// install is either fully seeded or not seeded at all.
+func seed(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -312,6 +284,15 @@ func migrate(db *sql.DB) error {
 		return err
 	}
 
+	res, err := tx.Exec(`INSERT INTO templates (nume, ordine) VALUES (?, 0)`, defaultTemplateNume)
+	if err != nil {
+		return err
+	}
+	templateID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
 	// The product ids are collected as they are inserted rather than assumed to
 	// run 1..19: the seeded document links to them, and that link must hold
 	// whatever ids SQLite hands out.
@@ -319,9 +300,9 @@ func migrate(db *sql.DB) error {
 	procente := seedProcente()
 	for i, p := range seedProducts {
 		res, err := tx.Exec(
-			`INSERT INTO products (denumire, um, pret_cu_tva, procent_din_intrare, ordine)
-			 VALUES (?, ?, ?, ?, ?)`,
-			p.Denumire, p.UM, p.PretCuTVA, procente[i], i,
+			`INSERT INTO products (template_id, denumire, um, pret_cu_tva, procent_din_intrare, ordine)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			templateID, p.Denumire, p.UM, p.PretCuTVA, procente[i], i,
 		)
 		if err != nil {
 			return err
@@ -331,7 +312,7 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
-	if err := seedFirstDocument(tx, productIDs); err != nil {
+	if err := seedFirstDocument(tx, templateID, productIDs); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -347,7 +328,7 @@ const seedDocumentNr = 1
 // months stale. Its footer is derived from its own rows by the same calc the
 // form and the PDF use, so the stored figures agree with the rows exactly as
 // they would had the user typed the document in and pressed Salvează.
-func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
+func seedFirstDocument(tx *sql.Tx, templateID int64, productIDs []int64) error {
 	now := time.Now()
 	iesire := make([]model.IesireRow, len(seedProducts))
 	for i, p := range seedProducts {
@@ -369,12 +350,12 @@ func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
 	incTip, incVal := calc.IncarcaDescarca(totalIesire, totalIntrare)
 
 	res, err := tx.Exec(
-		`INSERT INTO documents (nr, data, gestiune, document_referinta, diferenta_tip,
+		`INSERT INTO documents (template_id, nr, data, gestiune, document_referinta, diferenta_tip,
 		         diferenta_valoare, incarca_descarca_tip, incarca_descarca_valoare,
 		         gestionar, calculator, vizat_compartiment_productie, created_at, updated_at)
-		 VALUES (?, ?, ?, '', ?, ?, ?, ?, '', '', '', ?, ?)`,
-		seedDocumentNr, now.Format("2006-01-02"), defaultGestiune, difTip, difVal, incTip, incVal,
-		now.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339),
+		 VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, '', '', '', ?, ?)`,
+		templateID, seedDocumentNr, now.Format("2006-01-02"), defaultGestiune, difTip, difVal,
+		incTip, incVal, now.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339),
 	)
 	if err != nil {
 		return err
@@ -401,99 +382,6 @@ func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			documentID, *r.ProductID, r.Pozitie, r.Denumire, r.UM, r.PretCuTVA,
 			r.Cantitate, r.PretFaraTVA, r.CotaTVA,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// backfillGestiune sets the default gestiune to the one on the newest stored
-// document — the same value that document would have passed to the next one
-// back when a draft copied its gestiune from the previous document.
-//
-// A database with no documents, or whose newest document left the field blank,
-// keeps the empty default: there is nothing to carry over, and Setări is where
-// the user says what it should be. The seeded default is deliberately not used
-// as a fallback here, since reaching this code at all means the install predates
-// the column and has a history of its own.
-func backfillGestiune(db *sql.DB) error {
-	var gestiune string
-	err := db.QueryRow(`SELECT gestiune FROM documents ORDER BY id DESC LIMIT 1`).Scan(&gestiune)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if gestiune == "" {
-		return nil
-	}
-	_, err = db.Exec(`UPDATE settings SET gestiune = ? WHERE id = 1`, gestiune)
-	return err
-}
-
-// backfillProcente fills the ratio column from the oldest stored proces verbal:
-// each product's share of that document's total intrare quantity, with the last
-// product in display order closing the list at 100% (see procenteDinCantitati).
-//
-// It leaves every ratio at zero when there is nothing to derive them from — no
-// products, no documents, or a document that recorded no input. Setări shows
-// the column total and refuses to save until it reaches 100%, so a database
-// that lands here asks the user for the figures instead of guessing at them.
-func backfillProcente(db *sql.DB) error {
-	var documentID int64
-	err := db.QueryRow(`SELECT id FROM documents ORDER BY id LIMIT 1`).Scan(&documentID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-
-	var totalIntrare float64
-	if err := db.QueryRow(
-		`SELECT COALESCE(SUM(cantitate), 0) FROM document_intrare_rows WHERE document_id = ?`,
-		documentID,
-	).Scan(&totalIntrare); err != nil {
-		return err
-	}
-	if totalIntrare <= 0 {
-		return nil
-	}
-
-	// A product may appear on more than one row of the same document, so the
-	// quantities are summed per product rather than read row by row.
-	rows, err := db.Query(
-		`SELECT p.id, COALESCE((SELECT SUM(r.cantitate) FROM document_iesire_rows r
-		                        WHERE r.document_id = ? AND r.product_id = p.id), 0)
-		 FROM products p ORDER BY p.ordine, p.id`,
-		documentID,
-	)
-	if err != nil {
-		return err
-	}
-	var ids []int64
-	var cantitati []float64
-	for rows.Next() {
-		var id int64
-		var cantitate float64
-		if err := rows.Scan(&id, &cantitate); err != nil {
-			rows.Close()
-			return err
-		}
-		ids = append(ids, id)
-		cantitati = append(cantitati, cantitate)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	procente := procenteDinCantitati(cantitati, totalIntrare)
-	for i, id := range ids {
-		if _, err := db.Exec(
-			`UPDATE products SET procent_din_intrare = ? WHERE id = ?`, procente[i], id,
 		); err != nil {
 			return err
 		}

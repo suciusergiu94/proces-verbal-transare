@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -38,32 +39,158 @@ func newEmptyTestStore(t *testing.T) *Store {
 	return s
 }
 
-func TestOpenSeedsProducts(t *testing.T) {
+func TestOpenSeedsOneTemplateWithEveryProduct(t *testing.T) {
 	s := newTestStore(t)
 
-	products, err := s.ListProducts()
+	templates, err := s.ListTemplates()
 	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
+		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(products) != 19 {
-		t.Fatalf("len(products) = %d, want 19", len(products))
+	if len(templates) != 1 {
+		t.Fatalf("len(templates) = %d, want 1", len(templates))
 	}
-	if products[0].Denumire != "Pulpa fara os" || products[0].PretCuTVA != 21.9 {
-		t.Errorf("products[0] = %+v, want Pulpa fara os / 21.9", products[0])
+	if templates[0].Nume != "Carcasa Porc" {
+		t.Errorf("nume = %q, want %q", templates[0].Nume, "Carcasa Porc")
 	}
-	if products[3].Denumire != "Cotlet fara os" || products[3].PretCuTVA != 29.5 {
-		t.Errorf("products[3] = %+v, want Cotlet fara os / 29.5", products[3])
+	if len(templates[0].Products) != len(seedProducts) {
+		t.Fatalf("len(products) = %d, want %d", len(templates[0].Products), len(seedProducts))
 	}
-	if products[18].Denumire != "Deseu fara valoare" || products[18].PretCuTVA != 0 {
-		t.Errorf("products[18] = %+v, want Deseu fara valoare / 0", products[18])
-	}
-	for i, p := range products {
-		if p.UM != "Kg" {
-			t.Errorf("products[%d].UM = %q, want Kg", i, p.UM)
+	for i, p := range templates[0].Products {
+		if p.Denumire != seedProducts[i].Denumire {
+			t.Errorf("product %d denumire = %q, want %q", i, p.Denumire, seedProducts[i].Denumire)
+		}
+		if p.TemplateID != templates[0].ID {
+			t.Errorf("product %d templateId = %d, want %d", i, p.TemplateID, templates[0].ID)
 		}
 		if p.Ordine != i {
-			t.Errorf("products[%d].Ordine = %d, want %d", i, p.Ordine, i)
+			t.Errorf("product %d ordine = %d, want %d", i, p.Ordine, i)
 		}
+	}
+}
+
+func TestOpenSeedsRatiosSummingToExactlyOneHundred(t *testing.T) {
+	s := newTestStore(t)
+
+	templates, err := s.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	var total float64
+	for _, p := range templates[0].Products {
+		total += p.ProcentDinIntrare
+	}
+	if calc.Round3(total) != 100 {
+		t.Errorf("total procente = %v, want exactly 100", calc.Round3(total))
+	}
+}
+
+func TestOpenSeedsFirstDocumentStampedWithTheTemplate(t *testing.T) {
+	s := newTestStore(t)
+
+	templates, err := s.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	docs, err := s.ListDocuments()
+	if err != nil {
+		t.Fatalf("ListDocuments: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("len(docs) = %d, want 1", len(docs))
+	}
+	doc, err := s.GetDocument(docs[0].ID)
+	if err != nil {
+		t.Fatalf("GetDocument: %v", err)
+	}
+	if doc.TemplateID == nil {
+		t.Fatal("doc.TemplateID = nil, want the seeded template")
+	}
+	if *doc.TemplateID != templates[0].ID {
+		t.Errorf("doc.TemplateID = %d, want %d", *doc.TemplateID, templates[0].ID)
+	}
+}
+
+// A database written by a pre-release build has no templates table and a
+// products table with no template_id, so every query would fail on it. It is
+// dropped and reseeded rather than migrated: the app has never shipped, and
+// carrying an upgrade path for it would mean carrying it forever.
+func TestOpenResetsAPreReleaseDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), unitate_nume TEXT NOT NULL DEFAULT '',
+		  next_nr INTEGER NOT NULL DEFAULT 1, cota_tva REAL NOT NULL DEFAULT 11, gestiune TEXT NOT NULL DEFAULT '');
+		CREATE TABLE products (id INTEGER PRIMARY KEY AUTOINCREMENT, denumire TEXT NOT NULL,
+		  um TEXT NOT NULL DEFAULT 'Kg', pret_cu_tva REAL NOT NULL DEFAULT 0,
+		  procent_din_intrare REAL NOT NULL DEFAULT 0, ordine INTEGER NOT NULL);
+		INSERT INTO settings (id, unitate_nume, next_nr) VALUES (1, 'Vechi SRL', 42);
+		INSERT INTO products (denumire, um, pret_cu_tva, procent_din_intrare, ordine)
+		  VALUES ('Ceva vechi', 'Kg', 1, 100, 0);
+		PRAGMA user_version = 4;
+	`); err != nil {
+		t.Fatalf("build v4 database: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer s.Close()
+
+	templates, err := s.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	if len(templates) != 1 || len(templates[0].Products) != len(seedProducts) {
+		t.Fatalf("got %d templates with %d products, want 1 with %d",
+			len(templates), len(templates[0].Products), len(seedProducts))
+	}
+	settings, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if settings.UnitateNume != defaultUnitate {
+		t.Errorf("unitate = %q, want the seeded %q — the old row survived the reset",
+			settings.UnitateNume, defaultUnitate)
+	}
+}
+
+// A database already at the current version is left exactly as the user left
+// it. Without this guard the reset above would wipe real data on every start.
+func TestOpenDoesNotResetACurrentDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "current.db")
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	settings, err := s.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	settings.UnitateNume = "Altceva SRL"
+	if err := s.SaveSettings(settings); err != nil {
+		t.Fatalf("SaveSettings: %v", err)
+	}
+	s.Close()
+
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer s2.Close()
+	got, err := s2.GetSettings()
+	if err != nil {
+		t.Fatalf("GetSettings: %v", err)
+	}
+	if got.UnitateNume != "Altceva SRL" {
+		t.Errorf("unitate = %q, want %q — the database was reset when it should not have been",
+			got.UnitateNume, "Altceva SRL")
 	}
 }
 
@@ -74,8 +201,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Open: %v", err)
 	}
-	if err := s1.SaveProducts(nil); err != nil {
-		t.Fatalf("SaveProducts: %v", err)
+	if _, err := s1.db.Exec(`DELETE FROM products`); err != nil {
+		t.Fatalf("delete products: %v", err)
 	}
 	s1.Close()
 
@@ -85,12 +212,15 @@ func TestOpenIsIdempotent(t *testing.T) {
 	}
 	defer s2.Close()
 
-	products, err := s2.ListProducts()
+	templates, err := s2.ListTemplates()
 	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
+		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(products) != 0 {
-		t.Errorf("len(products) = %d after reopening an emptied DB, want 0 (re-seeding must not happen)", len(products))
+	if len(templates) != 1 {
+		t.Fatalf("len(templates) = %d, want 1", len(templates))
+	}
+	if len(templates[0].Products) != 0 {
+		t.Errorf("len(products) = %d after reopening an emptied DB, want 0 (re-seeding must not happen)", len(templates[0].Products))
 	}
 }
 
@@ -101,8 +231,8 @@ func TestOpenSetsUserVersion(t *testing.T) {
 	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatalf("PRAGMA user_version: %v", err)
 	}
-	if version != 4 {
-		t.Errorf("user_version = %d, want 4 (bumped when the default gestiune was added)", version)
+	if version != 5 {
+		t.Errorf("user_version = %d, want 5", version)
 	}
 }
 
@@ -137,46 +267,6 @@ func TestSettingsDefaultsAndRoundTrip(t *testing.T) {
 	}
 	if got.UnitateNume != "Alt SRL" || got.NextNr != 194 || got.Gestiune != "Magazin Ocolis" {
 		t.Errorf("settings = %+v, want {Alt SRL 194 Magazin Ocolis}", got)
-	}
-}
-
-func TestSaveProductsInsertsUpdatesDeletesAndReorders(t *testing.T) {
-	s := newTestStore(t)
-
-	products, err := s.ListProducts()
-	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
-	}
-
-	// Keep the first two, swap their order, rename the first, and append a new one.
-	products[0].Denumire = "Pulpa fara os (redenumit)"
-	next := []model.Product{
-		products[1],
-		products[0],
-		{Denumire: "Produs nou", UM: "buc", PretCuTVA: 5.5},
-	}
-	if err := s.SaveProducts(next); err != nil {
-		t.Fatalf("SaveProducts: %v", err)
-	}
-
-	got, err := s.ListProducts()
-	if err != nil {
-		t.Fatalf("ListProducts after save: %v", err)
-	}
-	if len(got) != 3 {
-		t.Fatalf("len(products) = %d, want 3", len(got))
-	}
-	if got[0].Denumire != "Muschiulet" || got[0].Ordine != 0 {
-		t.Errorf("got[0] = %+v, want Muschiulet at ordine 0", got[0])
-	}
-	if got[1].Denumire != "Pulpa fara os (redenumit)" || got[1].Ordine != 1 {
-		t.Errorf("got[1] = %+v, want the renamed product at ordine 1", got[1])
-	}
-	if got[2].Denumire != "Produs nou" || got[2].UM != "buc" || got[2].PretCuTVA != 5.5 {
-		t.Errorf("got[2] = %+v, want the newly inserted product", got[2])
-	}
-	if got[2].ID == 0 {
-		t.Error("newly inserted product has ID 0, want a generated id")
 	}
 }
 
@@ -266,10 +356,11 @@ func TestOpenSeedsFirstDocumentDatedToday(t *testing.T) {
 func TestOpenSeedsFirstDocumentLinkedToProducts(t *testing.T) {
 	s := newTestStore(t)
 
-	products, err := s.ListProducts()
+	templates, err := s.ListTemplates()
 	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
+		t.Fatalf("ListTemplates: %v", err)
 	}
+	products := templates[0].Products
 	doc := firstSeededDocument(t, s)
 	for i, row := range doc.Iesire {
 		if row.ProductID == nil {
@@ -378,10 +469,11 @@ func firstSeededDocument(t *testing.T, s *Store) model.Document {
 func TestOpenSeedsProductPercentages(t *testing.T) {
 	s := newTestStore(t)
 
-	products, err := s.ListProducts()
+	templates, err := s.ListTemplates()
 	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
+		t.Fatalf("ListTemplates: %v", err)
 	}
+	products := templates[0].Products
 
 	// Each ratio is the product's share of the 162.2 Kg carcass the shipped
 	// proces verbal was cut from: 15 / 162.2 = 9.248%, 1.5 / 162.2 = 0.925%.
@@ -406,37 +498,5 @@ func TestOpenSeedsProductPercentages(t *testing.T) {
 	}
 	if calc.Round3(total) != 100 {
 		t.Errorf("sum of ProcentDinIntrare = %v, want exactly 100", calc.Round3(total))
-	}
-}
-
-func TestSaveProductsRoundTripsProcentDinIntrare(t *testing.T) {
-	s := newTestStore(t)
-
-	// One inserted row and one updated row, so both SQL paths are covered.
-	if err := s.SaveProducts([]model.Product{
-		{Denumire: "Pulpa fara os", UM: "Kg", PretCuTVA: 21.9, ProcentDinIntrare: 60.5},
-		{ID: 0, Denumire: "Slanina", UM: "Kg", PretCuTVA: 12, ProcentDinIntrare: 39.5},
-	}); err != nil {
-		t.Fatalf("SaveProducts: %v", err)
-	}
-	inserted, err := s.ListProducts()
-	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
-	}
-	if inserted[0].ProcentDinIntrare != 60.5 || inserted[1].ProcentDinIntrare != 39.5 {
-		t.Fatalf("after insert = %v / %v, want 60.5 / 39.5",
-			inserted[0].ProcentDinIntrare, inserted[1].ProcentDinIntrare)
-	}
-
-	inserted[0].ProcentDinIntrare = 12.345
-	if err := s.SaveProducts(inserted); err != nil {
-		t.Fatalf("SaveProducts (update): %v", err)
-	}
-	updated, err := s.ListProducts()
-	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
-	}
-	if updated[0].ProcentDinIntrare != 12.345 {
-		t.Errorf("after update = %v, want 12.345", updated[0].ProcentDinIntrare)
 	}
 }

@@ -36,13 +36,14 @@ func (s *Store) ListDocuments() ([]model.DocumentSummary, error) {
 // GetDocument reads one document with both row tables.
 func (s *Store) GetDocument(id int64) (model.Document, error) {
 	var d model.Document
+	var templateID sql.NullInt64
 	err := s.db.QueryRow(
-		`SELECT id, nr, data, gestiune, document_referinta, diferenta_tip, diferenta_valoare,
+		`SELECT id, template_id, nr, data, gestiune, document_referinta, diferenta_tip, diferenta_valoare,
 		        incarca_descarca_tip, incarca_descarca_valoare, gestionar, calculator,
 		        vizat_compartiment_productie, created_at, updated_at
 		 FROM documents WHERE id = ?`, id,
 	).Scan(
-		&d.ID, &d.Nr, &d.Data, &d.Gestiune, &d.DocumentReferinta, &d.DiferentaTip, &d.DiferentaValoare,
+		&d.ID, &templateID, &d.Nr, &d.Data, &d.Gestiune, &d.DocumentReferinta, &d.DiferentaTip, &d.DiferentaValoare,
 		&d.IncarcaDescarcaTip, &d.IncarcaDescarcaValoare, &d.Gestionar, &d.Calculator,
 		&d.VizatCompartimentProductie, &d.CreatedAt, &d.UpdatedAt,
 	)
@@ -51,6 +52,10 @@ func (s *Store) GetDocument(id int64) (model.Document, error) {
 	}
 	if err != nil {
 		return model.Document{}, fmt.Errorf("citire document: %w", err)
+	}
+	if templateID.Valid {
+		id := templateID.Int64
+		d.TemplateID = &id
 	}
 
 	if d.Intrare, err = s.intrareRows(id); err != nil {

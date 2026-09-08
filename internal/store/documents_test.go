@@ -206,10 +206,11 @@ func TestLastDocument(t *testing.T) {
 func TestIesireRowKeepsSnapshotAfterProductDeleted(t *testing.T) {
 	s := newTestStore(t)
 
-	products, err := s.ListProducts()
+	templates, err := s.ListTemplates()
 	if err != nil {
-		t.Fatalf("ListProducts: %v", err)
+		t.Fatalf("ListTemplates: %v", err)
 	}
+	products := templates[0].Products
 	pid := products[0].ID
 
 	doc := sampleDocument()
@@ -219,8 +220,8 @@ func TestIesireRowKeepsSnapshotAfterProductDeleted(t *testing.T) {
 		t.Fatalf("SaveDocument: %v", err)
 	}
 
-	if err := s.SaveProducts(products[1:]); err != nil {
-		t.Fatalf("SaveProducts: %v", err)
+	if _, err := s.db.Exec(`DELETE FROM products WHERE id = ?`, pid); err != nil {
+		t.Fatalf("delete product: %v", err)
 	}
 
 	got, err := s.GetDocument(saved.ID)
