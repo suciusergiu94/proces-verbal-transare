@@ -357,17 +357,37 @@ Seeding is where the whole change is load-bearing now, so it gets the weight:
 
 ### Frontend (vitest)
 
-- Sidebar: with one template "+ Document nou" navigates directly; with two it
-  opens a menu whose entries carry the right hrefs.
-- Sidebar: the draft entry is shown for any `#/document/new/...` hash.
-- Setări: the 100% check reports the offending template by name and refuses to
-  save; a valid page saves settings and templates.
-- Setări: *Șterge* is hidden when one template remains; *Duplică* produces a
-  section whose products all have `id: 0`.
-- Document: "Salvează procentele noi" sends back only the open document's
-  template with changed ratios, the others byte-identical.
-- Document: with `templateId == null`, the margin buttons and the ratio button
-  are absent and typing an input quantity leaves "ce iese" alone.
+The project has no jsdom: vitest runs in node, and every existing test is over
+pure logic (`calc`, `format`, `escapeHtml`, `currentHash`, and the CSS cascade
+in `buttonHover.test.ts`). The view modules themselves have no tests today.
+Rather than add a DOM environment for this change, the decisions that would
+otherwise be buried in the views move into a new pure module,
+`frontend/src/templates.ts`, and the tests go there. The views keep only
+wiring.
+
+`templates.ts` exports, and is tested on:
+
+- `draftHash(templateId)` / `isDraftHash(hash)` / `draftTemplateId(hash)` —
+  round-trip; `isDraftHash` true for `#/document/new` and
+  `#/document/new/7`, false for `#/document/12` and `#/setari`;
+  `draftTemplateId` returns `undefined` for the bare draft hash.
+- `emptyTemplate()` — blank name, no products, `id: 0`.
+- `duplicateTemplate(t)` — name gets " (copie)", the copy's `id` and every
+  product `id` are 0, and the source is not mutated.
+- `validateTemplates(templates)` — returns the first problem as
+  `{ templateIndex, message }`, or `undefined`. Covered: blank template name;
+  blank product denumire; negative ratio; ratios summing to less than 100 (the
+  message names the template and the missing amount); ratios summing to more
+  than 100; a template with no products at all; and a valid set returning
+  `undefined`.
+- `templatesCuProcenteNoi(templates, templateId, cantitatiPerProdus)` — the
+  ratio write-back. Returns a new list in which only the named template's
+  ratios changed, every other template deep-equal to its input, and a product
+  the document did not produce set to 0. Returns `undefined` when the
+  quantities are all zero.
+
+`sidebar.test.ts` keeps `currentHash` and gains coverage that the draft route
+is recognised for a templated hash.
 
 ## Risk
 
