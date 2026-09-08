@@ -455,3 +455,39 @@ tfoot td.invalid {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* One template per section. The head stays visible so the ratio total of a
+   folded template is still readable — it is the figure that decides whether
+   the page can be saved at all. */
+.template-section {
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.template-head {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.5rem 0.6rem;
+}
+
+.template-nume {
+  flex: 1;
+  font-weight: 600;
+}
+
+.template-total {
+  min-width: 6rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.template-total.invalid {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.template-body {
+  padding: 0 0.6rem 0.6rem;
+}
