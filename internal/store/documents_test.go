@@ -78,7 +78,7 @@ func TestSaveAndGetDocument(t *testing.T) {
 }
 
 func TestSaveDocumentUpdatesInPlace(t *testing.T) {
-	s := newTestStore(t)
+	s := newEmptyTestStore(t)
 
 	saved, err := s.SaveDocument(sampleDocument())
 	if err != nil {
@@ -117,7 +117,7 @@ func TestSaveDocumentUpdatesInPlace(t *testing.T) {
 }
 
 func TestListDocumentsNewestFirst(t *testing.T) {
-	s := newTestStore(t)
+	s := newEmptyTestStore(t)
 
 	older := sampleDocument()
 	older.Nr = 192
@@ -145,7 +145,7 @@ func TestListDocumentsNewestFirst(t *testing.T) {
 }
 
 func TestDeleteDocumentCascadesRows(t *testing.T) {
-	s := newTestStore(t)
+	s := newEmptyTestStore(t)
 
 	saved, err := s.SaveDocument(sampleDocument())
 	if err != nil {
@@ -182,7 +182,7 @@ func TestGetDocumentMissing(t *testing.T) {
 }
 
 func TestLastDocument(t *testing.T) {
-	s := newTestStore(t)
+	s := newEmptyTestStore(t)
 
 	if _, ok, err := s.LastDocument(); err != nil || ok {
 		t.Errorf("LastDocument on empty store = ok %v, err %v; want false, nil", ok, err)

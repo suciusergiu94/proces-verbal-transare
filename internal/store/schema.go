@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"time"
 
+	"proces-verbal-transare/internal/calc"
 	"proces-verbal-transare/internal/model"
 )
 
@@ -99,6 +101,34 @@ var seedProducts = []model.Product{
 	{Denumire: "Deseu fara valoare", UM: "Kg", PretCuTVA: 0},
 }
 
+// seedIntrare and seedIesire are the proces verbal NR 1 that ships with the
+// app, copied verbatim from the sheet it was first filled in on. A new install
+// opens on a complete, real example rather than an empty list, which also
+// gives the margin buttons something to work against on the first run.
+//
+// The iesire rows are one per seedProducts entry, in the same order, so the
+// two lists are linked positionally when they are inserted (see migrate).
+// Prices are stored as they were entered, three decimals and all: rounding
+// 13.653 to 13.65 here would shift the totals and leave the footer disagreeing
+// with the rows above it.
+var seedIntrare = []model.IntrareRow{
+	{Denumire: "Carcasa", UM: "Kg", Cantitate: 162.2, PretFaraTVA: 12.3, PretCuTVA: 13.653, CotaTVA: defaultCotaTVA},
+}
+
+// seedIesireCantitati is the quantity for each seedProducts entry, in order.
+// The rest of every row — denumire, UM, price — is the product itself.
+var seedIesireCantitati = []float64{
+	15, 1.5, 2, 10, 1, 8.5, 11, 8.5, 2, 3.5, 12, 8, 10.5, 20.5, 12, 7.5, 18, 8.5, 1.2,
+}
+
+// seedIesirePreturiFaraTVA is each row's price without TVA as it was entered,
+// rather than re-derived here: the stored document must keep the figures the
+// sheet was signed with.
+var seedIesirePreturiFaraTVA = []float64{
+	19.73, 35.59, 21.62, 26.58, 21.62, 30.54, 27.48, 26.13, 14.86,
+	22.52, 18.83, 19.73, 16.67, 10.81, 5.86, 5.86, 1.8, 1.8, 0,
+}
+
 // hasColumn reports whether a table already carries a column.
 func hasColumn(db *sql.DB, table, column string) (bool, error) {
 	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
@@ -176,19 +206,104 @@ func migrate(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
+	// NR 1 is taken by the seeded document below, so a new document starts at 2.
 	if _, err := tx.Exec(
-		`INSERT INTO settings (id, unitate_nume, next_nr, cota_tva) VALUES (1, ?, 1, ?)`,
-		defaultUnitate, defaultCotaTVA,
+		`INSERT INTO settings (id, unitate_nume, next_nr, cota_tva) VALUES (1, ?, ?, ?)`,
+		defaultUnitate, seedDocumentNr+1, defaultCotaTVA,
 	); err != nil {
 		return err
 	}
+
+	// The product ids are collected as they are inserted rather than assumed to
+	// run 1..19: the seeded document links to them, and that link must hold
+	// whatever ids SQLite hands out.
+	productIDs := make([]int64, len(seedProducts))
 	for i, p := range seedProducts {
-		if _, err := tx.Exec(
+		res, err := tx.Exec(
 			`INSERT INTO products (denumire, um, pret_cu_tva, ordine) VALUES (?, ?, ?, ?)`,
 			p.Denumire, p.UM, p.PretCuTVA, i,
+		)
+		if err != nil {
+			return err
+		}
+		if productIDs[i], err = res.LastInsertId(); err != nil {
+			return err
+		}
+	}
+
+	if err := seedFirstDocument(tx, productIDs); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// seedDocumentNr is the number the shipped proces verbal carries.
+const seedDocumentNr = 1
+
+// seedFirstDocument inserts the shipped proces verbal and its two row tables.
+//
+// The document is dated the day it is seeded rather than the day the original
+// sheet was written, so a fresh install does not open on a document that looks
+// months stale. Its footer is derived from its own rows by the same calc the
+// form and the PDF use, so the stored figures agree with the rows exactly as
+// they would had the user typed the document in and pressed Salvează.
+func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
+	now := time.Now()
+	iesire := make([]model.IesireRow, len(seedProducts))
+	for i, p := range seedProducts {
+		iesire[i] = model.IesireRow{
+			ProductID:   &productIDs[i],
+			Pozitie:     i,
+			Denumire:    p.Denumire,
+			UM:          p.UM,
+			PretCuTVA:   p.PretCuTVA,
+			Cantitate:   seedIesireCantitati[i],
+			PretFaraTVA: seedIesirePreturiFaraTVA[i],
+			CotaTVA:     defaultCotaTVA,
+		}
+	}
+
+	totalIntrare := calc.TotalsIntrare(seedIntrare).ValoareCuTVA
+	totalIesire := calc.TotalsIesire(iesire).ValoareCuTVA
+	difTip, difVal := calc.Diferenta(totalIesire, totalIntrare)
+	incTip, incVal := calc.IncarcaDescarca(totalIesire, totalIntrare)
+
+	res, err := tx.Exec(
+		`INSERT INTO documents (nr, data, gestiune, document_referinta, diferenta_tip,
+		         diferenta_valoare, incarca_descarca_tip, incarca_descarca_valoare,
+		         gestionar, calculator, vizat_compartiment_productie, created_at, updated_at)
+		 VALUES (?, ?, '', '', ?, ?, ?, ?, '', '', '', ?, ?)`,
+		seedDocumentNr, now.Format("2006-01-02"), difTip, difVal, incTip, incVal,
+		now.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return err
+	}
+	documentID, err := res.LastInsertId()
+	if err != nil {
+		return err
+	}
+
+	for i, r := range seedIntrare {
+		if _, err := tx.Exec(
+			`INSERT INTO document_intrare_rows (document_id, pozitie, denumire, um,
+			         cantitate, pret_fara_tva, pret_cu_tva, cota_tva)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			documentID, i, r.Denumire, r.UM, r.Cantitate, r.PretFaraTVA, r.PretCuTVA, r.CotaTVA,
 		); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	for _, r := range iesire {
+		if _, err := tx.Exec(
+			`INSERT INTO document_iesire_rows (document_id, product_id, pozitie, denumire,
+			         um, pret_cu_tva, cantitate, pret_fara_tva, cota_tva)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			documentID, *r.ProductID, r.Pozitie, r.Denumire, r.UM, r.PretCuTVA,
+			r.Cantitate, r.PretFaraTVA, r.CotaTVA,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }

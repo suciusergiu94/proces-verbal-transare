@@ -18,8 +18,46 @@ func newTestApp(t *testing.T) *App {
 	return &App{store: s}
 }
 
-func TestNewDocumentDraftWithoutHistory(t *testing.T) {
+// newEmptyTestApp is newTestApp with the shipped proces verbal removed, for
+// the tests that are about a store with no documents in it at all.
+func newEmptyTestApp(t *testing.T) *App {
+	t.Helper()
 	a := newTestApp(t)
+	docs, err := a.ListDocuments()
+	if err != nil {
+		t.Fatalf("ListDocuments: %v", err)
+	}
+	for _, d := range docs {
+		if err := a.DeleteDocument(d.ID); err != nil {
+			t.Fatalf("DeleteDocument: %v", err)
+		}
+	}
+	return a
+}
+
+// A brand-new install already has the shipped proces verbal behind it, so the
+// first document the user starts is numbered after it and carries its intrare
+// row forward — the same prefill any other saved document would give.
+func TestNewDocumentDraftOnFreshInstall(t *testing.T) {
+	a := newTestApp(t)
+
+	draft, err := a.NewDocumentDraft()
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	if draft.Nr != 2 {
+		t.Errorf("draft.Nr = %d, want 2 (the seeded document took NR 1)", draft.Nr)
+	}
+	if len(draft.Intrare) != 1 || draft.Intrare[0].Denumire != "Carcasa" {
+		t.Errorf("draft.Intrare = %+v, want the seeded document's intrare row", draft.Intrare)
+	}
+	if draft.Intrare[0].ID != 0 {
+		t.Errorf("draft.Intrare[0].ID = %d, want 0 (prefilled rows must be unsaved)", draft.Intrare[0].ID)
+	}
+}
+
+func TestNewDocumentDraftWithoutHistory(t *testing.T) {
+	a := newEmptyTestApp(t)
 
 	draft, err := a.NewDocumentDraft()
 	if err != nil {
@@ -28,8 +66,8 @@ func TestNewDocumentDraftWithoutHistory(t *testing.T) {
 	if draft.ID != 0 {
 		t.Errorf("draft.ID = %d, want 0", draft.ID)
 	}
-	if draft.Nr != 1 {
-		t.Errorf("draft.Nr = %d, want 1 (settings.NextNr)", draft.Nr)
+	if draft.Nr != 2 {
+		t.Errorf("draft.Nr = %d, want 2 (settings.NextNr)", draft.Nr)
 	}
 	if draft.Data == "" {
 		t.Error("draft.Data is empty, want today's ISO date")
