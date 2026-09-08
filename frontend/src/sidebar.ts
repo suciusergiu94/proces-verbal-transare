@@ -4,6 +4,19 @@ import { navigate } from './router';
 
 let hashchangeListenerRegistered = false;
 
+/** The route an unsaved document lives at. */
+export const DRAFT_HASH = '#/document/new';
+
+/**
+ * The hash to match sidebar entries against. A freshly launched app has an
+ * empty hash and the router falls back to the new-document route, so the same
+ * fallback is applied here — otherwise the draft tab would be missing, and no
+ * entry highlighted, on the one screen the app always opens on.
+ */
+export function currentHash(hash: string = window.location.hash): string {
+  return hash || DRAFT_HASH;
+}
+
 /** Renders the sidebar: new-document button, document history, settings link. */
 export async function renderSidebar(el: HTMLElement): Promise<void> {
   let documents: DocumentSummary[];
@@ -26,14 +39,27 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
     )
     .join('');
 
+  // The draft entry is rendered on every pass and shown or hidden by
+  // markActive, so moving in and out of #/document/new only toggles an
+  // attribute instead of rebuilding a sidebar whose document list costs a
+  // round trip to SQLite. It sits above the saved documents because the list
+  // is newest-first and the unsaved one is newer than all of them.
   el.innerHTML = `
     <button class="btn btn-primary" id="new-doc">+ Document nou</button>
-    ${documents.length > 0 ? `<ul class="doc-list">${items}</ul>` : ''}
+    <ul class="doc-list">
+      <li id="draft-item" hidden>
+        <a class="doc-link" href="${DRAFT_HASH}">
+          <span class="doc-nr">Document nou</span>
+          <span class="doc-meta draft-meta">Nesalvat</span>
+        </a>
+      </li>
+      ${items}
+    </ul>
     <a class="settings-link" href="#/setari">Setări</a>
   `;
 
   el.querySelector<HTMLButtonElement>('#new-doc')!.addEventListener('click', () => {
-    navigate('#/document/new');
+    navigate(DRAFT_HASH);
   });
 
   markActive(el);
@@ -45,8 +71,10 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
 }
 
 function markActive(el: HTMLElement): void {
+  const hash = currentHash();
+  el.querySelector('#draft-item')?.toggleAttribute('hidden', hash !== DRAFT_HASH);
   el.querySelectorAll('a').forEach((link) => {
-    link.classList.toggle('active', link.getAttribute('href') === window.location.hash);
+    link.classList.toggle('active', link.getAttribute('href') === hash);
   });
 }
 

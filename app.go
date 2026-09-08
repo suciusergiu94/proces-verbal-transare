@@ -109,11 +109,18 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 			// The rate travels with the row: a line the user deliberately taxed
 			// at something other than the default keeps that rate when it is
 			// carried into the next document, alongside its prices.
+			//
+			// The quantity deliberately does not travel. What repeats between
+			// documents is the shape of the delivery — same products, same
+			// prices, same rates — while the weight is measured afresh every
+			// time. Carrying it over would start each document on a quantity
+			// that is wrong by definition, and because the "ce iese" split is
+			// derived from it, a forgotten field would quietly fill the whole
+			// second table with the previous carcass's numbers.
 			draft.Intrare = append(draft.Intrare, model.IntrareRow{
 				Pozitie:     i,
 				Denumire:    r.Denumire,
 				UM:          r.UM,
-				Cantitate:   r.Cantitate,
 				PretFaraTVA: r.PretFaraTVA,
 				PretCuTVA:   r.PretCuTVA,
 				CotaTVA:     r.CotaTVA,

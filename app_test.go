@@ -121,8 +121,14 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 	if draft.Intrare[0].ID != 0 {
 		t.Errorf("draft.Intrare[0].ID = %d, want 0 (prefilled rows must be unsaved)", draft.Intrare[0].ID)
 	}
-	if draft.Intrare[0].Cantitate != 162.20 {
-		t.Errorf("draft.Intrare[0].Cantitate = %v, want the previous quantity", draft.Intrare[0].Cantitate)
+	if draft.Intrare[0].PretCuTVA != 14.03 {
+		t.Errorf("draft.Intrare[0].PretCuTVA = %v, want the previous price", draft.Intrare[0].PretCuTVA)
+	}
+	// The prices carry over, the quantity does not: every carcass is weighed
+	// afresh, so a quantity left over from the previous document would be
+	// wrong on every new one and silently drive the whole "ce iese" split.
+	if draft.Intrare[0].Cantitate != 0 {
+		t.Errorf("draft.Intrare[0].Cantitate = %v, want 0", draft.Intrare[0].Cantitate)
 	}
 }
 

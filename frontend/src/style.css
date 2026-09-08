@@ -74,6 +74,12 @@ body {
   color: var(--muted);
 }
 
+/* Marks the open-but-unsaved document apart from the saved ones above whose
+   subtitle is a real date. */
+.draft-meta {
+  font-style: italic;
+}
+
 .settings-link {
   margin-top: auto;
   padding: 8px 10px;
@@ -252,6 +258,12 @@ tfoot td {
   align-items: center;
   gap: 8px;
   margin-bottom: 8px;
+}
+
+/* Set apart from the +/- pair: those nudge the split on this document only,
+   this one writes it back to Setări for every document after it. */
+.marja-salveaza {
+  margin-left: 12px;
 }
 
 .marja label {

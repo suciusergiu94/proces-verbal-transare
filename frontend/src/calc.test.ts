@@ -7,6 +7,7 @@ import {
   marjaProfit,
   pretCuTvaDin,
   pretFaraTvaDin,
+  procenteDinCantitati,
   round2,
   round3,
   sumaProcente,
@@ -343,5 +344,43 @@ describe('sumaProcente', () => {
 
   it('is zero for an empty list', () => {
     expect(sumaProcente([])).toBe(0);
+  });
+});
+
+describe('procenteDinCantitati', () => {
+  it('reads an exact split straight off', () => {
+    expect(procenteDinCantitati([60, 30, 10])).toEqual([60, 30, 10]);
+  });
+
+  it('always lands on exactly 100 %, as Setări demands', () => {
+    // A third each: 33.333 three times over is 99.999, and the leftover
+    // thousandth has to land somewhere rather than evaporating.
+    const out = procenteDinCantitati([1, 1, 1])!;
+    expect(sumaProcente(out)).toBe(100);
+  });
+
+  it('round-trips the seeded proces verbal back into its own quantities', () => {
+    const cantitati = [
+      15, 1.5, 2, 10, 1, 8.5, 11, 8.5, 2, 3.5, 12, 8, 10.5, 20.5, 12, 7.5, 18, 8.5, 2.2,
+    ];
+    const procente = procenteDinCantitati(cantitati)!;
+    expect(sumaProcente(procente)).toBe(100);
+    expect(cantitatiDinProcente(procente, 162.2)).toEqual(cantitati);
+  });
+
+  it('scales a column that does not weigh what went in up to the whole carcass', () => {
+    // Half a carcass, split three ways, still describes how a whole one splits.
+    expect(procenteDinCantitati([30, 15, 5])).toEqual([60, 30, 10]);
+  });
+
+  it('leaves a product that yielded nothing at zero', () => {
+    const out = procenteDinCantitati([1, 0, 1, 1])!;
+    expect(out[1]).toBe(0);
+    expect(sumaProcente(out)).toBe(100);
+  });
+
+  it('returns undefined when nothing has come out yet', () => {
+    expect(procenteDinCantitati([0, 0, 0])).toBeUndefined();
+    expect(procenteDinCantitati([])).toBeUndefined();
   });
 });

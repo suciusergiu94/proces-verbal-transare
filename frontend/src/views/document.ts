@@ -6,6 +6,7 @@ import {
   ListProducts,
   NewDocumentDraft,
   SaveDocument,
+  SaveProducts,
   showError,
 } from '../api';
 import type { Document, Product } from '../api';
@@ -17,6 +18,7 @@ import {
   marjaProfit,
   pretCuTvaDin,
   pretFaraTvaDin,
+  procenteDinCantitati,
   totals,
   valoare,
 } from '../calc';
@@ -54,6 +56,11 @@ export async function renderDocumentView(
   // Each product's share of the carcass, by product id. The "ce iese"
   // quantities are filled from these whenever the input quantity changes.
   let procente = new Map<number, number>();
+  // Set once the +/- buttons have actually moved the split, which is what puts
+  // "Salvează procentele noi" on screen. Nothing else offers to rewrite the
+  // stored ratios, so the button stays out of the way until the user has a
+  // split of their own to keep.
+  let marjaNudged = false;
 
   try {
     const [loaded, settings, products] = await Promise.all([
@@ -77,13 +84,10 @@ export async function renderDocumentView(
   documentInputAbort = new AbortController();
   outlet.addEventListener('input', onInput, { signal: documentInputAbort.signal });
 
-  // A new document arrives with the previous one's "ce intră" rows already on
-  // it and its "ce iese" quantities at zero, so the ratios are applied once up
-  // front: the form opens on a complete butchering of that carcass rather than
-  // waiting for a keystroke it already has the answer to. A saved document is
-  // left exactly as it was saved.
-  if (doc.id === 0) aplicaProcente();
-
+  // No ratios are applied up front: a new document carries the previous one's
+  // "ce intră" rows but not their quantities, so there is nothing to split
+  // until the user weighs the carcass. Typing that quantity fills the whole
+  // "ce iese" table from the ratios (see onInput).
   renderAll();
 
   function renderAll(): void {
@@ -134,6 +138,12 @@ export async function renderDocumentView(
           <button class="btn-icon" id="marja-minus" type="button" title="Scade marja cu ${PAS_MARJA} % redistribuind cantitățile">−</button>
           <button class="btn-icon" id="marja-plus" type="button" title="Crește marja cu ${PAS_MARJA} % redistribuind cantitățile">+</button>
         </div>
+        <button
+          class="btn marja-salveaza"
+          id="save-procente"
+          type="button"
+          ${marjaNudged ? '' : 'hidden'}
+        >Salvează procentele noi</button>
       </div>
       ${iesireTable()}
 
@@ -171,7 +181,7 @@ export async function renderDocumentView(
 
       <div class="btn-row">
         <button class="btn btn-primary" id="save">Salvează</button>
-        <button class="btn" id="print" ${doc.id === 0 ? 'disabled title="Salvează documentul întâi"' : ''}>Printează (PDF)</button>
+        ${doc.id === 0 ? '' : '<button class="btn" id="print">Printează (PDF)</button>'}
         ${doc.id === 0 ? '' : '<button class="btn btn-danger" id="delete">Șterge</button>'}
       </div>
     `;
@@ -309,10 +319,12 @@ export async function renderDocumentView(
 
     outlet.querySelector('#save')!.addEventListener('click', () => void onSave());
 
-    const printBtn = outlet.querySelector('#print') as HTMLButtonElement | null;
-    if (printBtn && !printBtn.disabled) {
-      printBtn.addEventListener('click', () => void onPrint());
-    }
+    const printBtn = outlet.querySelector('#print');
+    if (printBtn) printBtn.addEventListener('click', () => void onPrint());
+
+    outlet
+      .querySelector('#save-procente')!
+      .addEventListener('click', () => void onSaveProcente());
 
     const deleteBtn = outlet.querySelector('#delete');
     if (deleteBtn) deleteBtn.addEventListener('click', () => void onDelete());
@@ -341,7 +353,74 @@ export async function renderDocumentView(
       );
       if (tr) setRowField(tr, 'cantitate', cantitate);
     });
+    marjaNudged = true;
+    syncSalvareProcente();
     recompute();
+  }
+
+  /** Puts the "save the new ratios" button in step with marjaNudged. */
+  function syncSalvareProcente(): void {
+    outlet.querySelector('#save-procente')?.toggleAttribute('hidden', !marjaNudged);
+  }
+
+  /**
+   * Stores the split the user nudged into as the product list's carcass
+   * ratios, so every later document opens on it — the same column Setări
+   * shows and edits by hand.
+   *
+   * The ratios are worked out per product rather than per row: a row whose
+   * product has since been deleted from Setări cannot carry a share, and must
+   * not take one with it and leave the column short of the 100% Setări
+   * insists on. A product that this document does not produce at all goes to
+   * zero for the same reason — the column being written is the whole of it,
+   * not a patch over what is stored.
+   */
+  async function onSaveProcente(): Promise<void> {
+    readForm();
+    let products: Product[];
+    try {
+      products = await ListProducts();
+    } catch (err) {
+      showError('Lista de produse nu a putut fi citită', err);
+      return;
+    }
+
+    const cantitatiPerProdus = new Map<number, number>();
+    doc.iesire.forEach((row) => {
+      if (row.productId == null) return;
+      cantitatiPerProdus.set(
+        row.productId,
+        (cantitatiPerProdus.get(row.productId) ?? 0) + row.cantitate,
+      );
+    });
+    const noi = procenteDinCantitati(products.map((p) => cantitatiPerProdus.get(p.id) ?? 0));
+    if (noi === undefined) {
+      showToast('Nu există cantități din care să se calculeze procentele.');
+      return;
+    }
+
+    if (
+      !(await showConfirm(
+        'Salvați procentele noi? Procentele din Setări vor fi înlocuite cu cele ' +
+          'rezultate din cantitățile de pe acest document.',
+      ))
+    ) {
+      return;
+    }
+
+    try {
+      const actualizate = products.map((p, i) => ({ ...p, procentDinIntrare: noi[i] }));
+      await SaveProducts(actualizate);
+      // The form fills "ce iese" from these whenever the carcass weight
+      // changes, so the in-memory copy has to move with the stored one or the
+      // next keystroke would undo what was just saved.
+      procente = new Map(actualizate.map((p) => [p.id, p.procentDinIntrare]));
+      marjaNudged = false;
+      syncSalvareProcente();
+      showToast('Procentele au fost salvate!');
+    } catch (err) {
+      showError('Procentele nu au putut fi salvate', err);
+    }
   }
 
   function onInput(event: Event): void {
@@ -570,7 +649,7 @@ export async function renderDocumentView(
   // ExportPDF re-reads the document from SQLite by id, so printing without
   // saving first would silently export stale data for any edit made since
   // the last save. Rather than warn and make the user click twice, we save
-  // automatically before exporting — the print button is only enabled once
+  // automatically before exporting — the print button is only rendered once
   // the document already exists (doc.id !== 0), so this is always an update
   // to an already-saved document, never a surprise first save. This keeps
   // "Printează" a single click, which matters for a form whose whole purpose

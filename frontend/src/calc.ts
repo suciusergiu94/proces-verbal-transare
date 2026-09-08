@@ -307,3 +307,48 @@ export function cantitatiDinProcente(procente: number[], totalIntrare: number): 
 
   return intregi.map((b) => round2(b * PAS_CANTITATE));
 }
+
+/**
+ * The carcass ratios a column of "ce iese" quantities implies, in percent —
+ * the inverse of cantitatiDinProcente, used to store a split the user arrived
+ * at by nudging the margin.
+ *
+ * The quantities are read as a split of the whole carcass: the column is
+ * scaled to account for exactly 100%, whatever went in. A document whose
+ * output does not weigh what its input did still yields a usable column that
+ * way, and it is the split between products the nudging moved, never the
+ * carcass weight — ajusteazaMarja conserves the total.
+ *
+ * Rounded to three decimals, the precision Setări stores and shows, with the
+ * leftover thousandths handed to the largest remainders so the column lands on
+ * exactly 100 instead of 99.999 — Setări refuses to store anything else. A
+ * zero quantity stays at zero and never absorbs a leftover: a product the
+ * butchering did not produce cannot be booked a share.
+ *
+ * Returns undefined when nothing has come out at all, the one column with no
+ * split to describe.
+ *
+ * Like marjaProfit, ajusteazaMarja and cantitatiDinProcente this is a working
+ * aid with no counterpart in internal/calc.
+ */
+export function procenteDinCantitati(cantitati: number[]): number[] | undefined {
+  const total = cantitati.reduce((sum, q) => sum + Math.max(0, q), 0);
+  if (total <= 0) return undefined;
+
+  // Counted in whole thousandths of a percent, so the leftovers can be handed
+  // out as indivisible units the way cantitatiDinProcente hands out bani.
+  const miimi = cantitati.map((q) => (Math.max(0, q) / total) * 100000);
+  const intregi = miimi.map((m) => Math.floor(m));
+
+  let rest = 100000 - intregi.reduce((sum, m) => sum + m, 0);
+  const candidati = miimi
+    .map((m, i) => ({ i, fractie: m - intregi[i] }))
+    .filter(({ i }) => cantitati[i] > 0)
+    .sort((a, b) => b.fractie - a.fractie);
+  for (let n = 0; rest > 0 && n < candidati.length; n++) {
+    intregi[candidati[n].i] += 1;
+    rest -= 1;
+  }
+
+  return intregi.map((m) => round3(m / 1000));
+}
