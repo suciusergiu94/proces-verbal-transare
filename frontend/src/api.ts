@@ -4,11 +4,11 @@ import {
   GetDocument,
   GetSettings,
   ListDocuments,
-  ListProducts,
+  ListTemplates,
   NewDocumentDraft,
   SaveDocument,
-  SaveProducts,
   SaveSettings,
+  SaveTemplates,
 } from '../wailsjs/go/main/App';
 import { model } from '../wailsjs/go/models';
 import { showAlert } from './dialog';
@@ -19,6 +19,7 @@ export type IntrareRow = model.IntrareRow;
 export type IesireRow = model.IesireRow;
 export type Product = model.Product;
 export type Settings = model.Settings;
+export type Template = model.Template;
 
 export {
   DeleteDocument,
@@ -26,11 +27,11 @@ export {
   GetDocument,
   GetSettings,
   ListDocuments,
-  ListProducts,
+  ListTemplates,
   NewDocumentDraft,
   SaveDocument,
-  SaveProducts,
   SaveSettings,
+  SaveTemplates,
 };
 
 /** Shows a Go-side error to the user in Romanian. */
