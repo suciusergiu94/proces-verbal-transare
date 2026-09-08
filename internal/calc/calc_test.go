@@ -143,3 +143,22 @@ func TestPretFaraTVA(t *testing.T) {
 		})
 	}
 }
+
+func TestRound3(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want float64
+	}{
+		// The seeded ratios: 15 Kg and 1.5 Kg out of a 162.2 Kg carcass.
+		{9.247842170159063, 9.248},
+		{0.9247842170159063, 0.925},
+		{-9.247842170159063, -9.248},
+		{0, 0},
+		{100, 100},
+	}
+	for _, c := range cases {
+		if got := Round3(c.in); got != c.want {
+			t.Errorf("Round3(%v) = %v, want %v", c.in, got, c.want)
+		}
+	}
+}

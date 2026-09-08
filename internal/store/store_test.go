@@ -101,8 +101,8 @@ func TestOpenSetsUserVersion(t *testing.T) {
 	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		t.Fatalf("PRAGMA user_version: %v", err)
 	}
-	if version != 2 {
-		t.Errorf("user_version = %d, want 2 (bumped when the TVA rate columns were added)", version)
+	if version != 3 {
+		t.Errorf("user_version = %d, want 3 (bumped when the carcass ratio column was added)", version)
 	}
 }
 
@@ -232,8 +232,8 @@ func TestOpenSeedsFirstDocument(t *testing.T) {
 	if doc.Iesire[0].Denumire != "Pulpa fara os" || doc.Iesire[0].Cantitate != 15 {
 		t.Errorf("Iesire[0] = %+v, want Pulpa fara os / 15", doc.Iesire[0])
 	}
-	if doc.Iesire[18].Denumire != "Deseu fara valoare" || doc.Iesire[18].Cantitate != 1.2 {
-		t.Errorf("Iesire[18] = %+v, want Deseu fara valoare / 1.2", doc.Iesire[18])
+	if doc.Iesire[18].Denumire != "Deseu fara valoare" || doc.Iesire[18].Cantitate != 2.2 {
+		t.Errorf("Iesire[18] = %+v, want Deseu fara valoare / 2.2", doc.Iesire[18])
 	}
 }
 
@@ -361,4 +361,70 @@ func firstSeededDocument(t *testing.T, s *Store) model.Document {
 		t.Fatalf("GetDocument: %v", err)
 	}
 	return doc
+}
+
+func TestOpenSeedsProductPercentages(t *testing.T) {
+	s := newTestStore(t)
+
+	products, err := s.ListProducts()
+	if err != nil {
+		t.Fatalf("ListProducts: %v", err)
+	}
+
+	// Each ratio is the product's share of the 162.2 Kg carcass the shipped
+	// proces verbal was cut from: 15 / 162.2 = 9.248%, 1.5 / 162.2 = 0.925%.
+	want := map[int]float64{0: 9.248, 1: 0.925, 3: 6.165, 13: 12.639}
+	for i, w := range want {
+		if products[i].ProcentDinIntrare != w {
+			t.Errorf("products[%d] (%s).ProcentDinIntrare = %v, want %v",
+				i, products[i].Denumire, products[i].ProcentDinIntrare, w)
+		}
+	}
+
+	// Deseu fara valoare closes the list: it carries whatever the named cuts
+	// leave over, so the column reaches exactly 100%.
+	if products[18].ProcentDinIntrare != 1.358 {
+		t.Errorf("products[18] (%s).ProcentDinIntrare = %v, want 1.358 (the residual)",
+			products[18].Denumire, products[18].ProcentDinIntrare)
+	}
+
+	var total float64
+	for _, p := range products {
+		total += p.ProcentDinIntrare
+	}
+	if calc.Round3(total) != 100 {
+		t.Errorf("sum of ProcentDinIntrare = %v, want exactly 100", calc.Round3(total))
+	}
+}
+
+func TestSaveProductsRoundTripsProcentDinIntrare(t *testing.T) {
+	s := newTestStore(t)
+
+	// One inserted row and one updated row, so both SQL paths are covered.
+	if err := s.SaveProducts([]model.Product{
+		{Denumire: "Pulpa fara os", UM: "Kg", PretCuTVA: 21.9, ProcentDinIntrare: 60.5},
+		{ID: 0, Denumire: "Slanina", UM: "Kg", PretCuTVA: 12, ProcentDinIntrare: 39.5},
+	}); err != nil {
+		t.Fatalf("SaveProducts: %v", err)
+	}
+	inserted, err := s.ListProducts()
+	if err != nil {
+		t.Fatalf("ListProducts: %v", err)
+	}
+	if inserted[0].ProcentDinIntrare != 60.5 || inserted[1].ProcentDinIntrare != 39.5 {
+		t.Fatalf("after insert = %v / %v, want 60.5 / 39.5",
+			inserted[0].ProcentDinIntrare, inserted[1].ProcentDinIntrare)
+	}
+
+	inserted[0].ProcentDinIntrare = 12.345
+	if err := s.SaveProducts(inserted); err != nil {
+		t.Fatalf("SaveProducts (update): %v", err)
+	}
+	updated, err := s.ListProducts()
+	if err != nil {
+		t.Fatalf("ListProducts: %v", err)
+	}
+	if updated[0].ProcentDinIntrare != 12.345 {
+		t.Errorf("after update = %v, want 12.345", updated[0].ProcentDinIntrare)
+	}
 }

@@ -3,13 +3,15 @@ import {
   ExportPDF,
   GetDocument,
   GetSettings,
+  ListProducts,
   NewDocumentDraft,
   SaveDocument,
   showError,
 } from '../api';
-import type { Document } from '../api';
+import type { Document, Product } from '../api';
 import {
   ajusteazaMarja,
+  cantitatiDinProcente,
   diferenta,
   incarcaDescarca,
   marjaProfit,
@@ -18,6 +20,7 @@ import {
   totals,
   valoare,
 } from '../calc';
+import { showConfirm } from '../dialog';
 import { formatDateRO, formatNumber, parseDateRO, parseNumber } from '../format';
 import { navigate } from '../router';
 import { showToast } from '../toast';
@@ -48,15 +51,20 @@ export async function renderDocumentView(
   let unitate = '';
   // The rate new rows start from. Rows already on the document keep their own.
   let cotaImplicita = 0;
+  // Each product's share of the carcass, by product id. The "ce iese"
+  // quantities are filled from these whenever the input quantity changes.
+  let procente = new Map<number, number>();
 
   try {
-    const [loaded, settings] = await Promise.all([
+    const [loaded, settings, products] = await Promise.all([
       id === undefined ? NewDocumentDraft() : GetDocument(Number(id)),
       GetSettings(),
+      ListProducts(),
     ]);
     doc = loaded;
     unitate = settings.unitateNume;
     cotaImplicita = settings.cotaTva;
+    procente = new Map(products.map((p: Product) => [p.id, p.procentDinIntrare]));
   } catch (err) {
     showError('Nu s-a putut încărca documentul', err);
     outlet.innerHTML = '<p class="empty">Documentul nu a putut fi încărcat.</p>';
@@ -68,6 +76,13 @@ export async function renderDocumentView(
   documentInputAbort?.abort();
   documentInputAbort = new AbortController();
   outlet.addEventListener('input', onInput, { signal: documentInputAbort.signal });
+
+  // A new document arrives with the previous one's "ce intră" rows already on
+  // it and its "ce iese" quantities at zero, so the ratios are applied once up
+  // front: the form opens on a complete butchering of that carcass rather than
+  // waiting for a keystroke it already has the answer to. A saved document is
+  // left exactly as it was saved.
+  if (doc.id === 0) aplicaProcente();
 
   renderAll();
 
@@ -271,6 +286,8 @@ export async function renderDocumentView(
       btn.addEventListener('click', () => {
         readForm();
         doc.intrare.splice(Number(btn.dataset.remove), 1);
+        // One fewer input row is less carcass, so the yields follow.
+        aplicaProcente();
         renderAll();
       });
     });
@@ -333,8 +350,56 @@ export async function renderDocumentView(
     if (target instanceof HTMLInputElement) {
       const tr = target.closest<HTMLTableRowElement>('tr[data-table]');
       if (tr && target.dataset.field) syncPrices(tr, target.dataset.field);
+      // What goes in decides what comes out, so editing an input quantity
+      // refills the whole "ce iese" table from the ratios.
+      if (tr?.dataset.table === 'intrare' && target.dataset.field === 'cantitate') {
+        aplicaProcente();
+        writeCantitatiIesire();
+      }
     }
     recompute();
+  }
+
+  /**
+   * Fills every "ce iese" quantity from its product's share of what went in.
+   *
+   * This overwrites quantities the user has typed, and undoes a margin nudge:
+   * the carcass is what the butchering starts from, so a correction to it
+   * settles the table. Rows whose product has since been deleted from Setări
+   * have no ratio to go on and keep the quantity they already carry.
+   *
+   * Writes onto doc only. The inputs are refreshed separately, because on the
+   * first run the table has not been rendered yet.
+   */
+  function aplicaProcente(): void {
+    const indici: number[] = [];
+    const cote: number[] = [];
+    doc.iesire.forEach((row, i) => {
+      const procent = row.productId == null ? undefined : procente.get(row.productId);
+      if (procent === undefined) return;
+      indici.push(i);
+      cote.push(procent);
+    });
+    if (indici.length === 0) return;
+
+    const cantitati = cantitatiDinProcente(cote, totals(doc.intrare).cantitate);
+    indici.forEach((i, n) => {
+      doc.iesire[i].cantitate = cantitati[n];
+    });
+  }
+
+  /**
+   * Copies the "ce iese" quantities from doc back into their inputs, in place
+   * rather than through renderAll(), so the user keeps their caret and scroll
+   * position while typing the carcass weight and watching the table fill in.
+   */
+  function writeCantitatiIesire(): void {
+    doc.iesire.forEach((row, i) => {
+      const tr = outlet.querySelector<HTMLTableRowElement>(
+        `tr[data-table="iesire"][data-index="${i}"]`,
+      );
+      if (tr) setRowField(tr, 'cantitate', row.cantitate);
+    });
   }
 
   /**
@@ -521,7 +586,7 @@ export async function renderDocumentView(
   }
 
   async function onDelete(): Promise<void> {
-    if (!window.confirm(`Ștergeți documentul NR ${doc.nr}?`)) return;
+    if (!(await showConfirm('Sunteți sigur că doriți să ștergeți documentul?'))) return;
     try {
       await DeleteDocument(doc.id);
       await refreshSidebar();

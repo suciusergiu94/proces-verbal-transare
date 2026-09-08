@@ -18,7 +18,13 @@ type Product struct {
 	Denumire  string  `json:"denumire"`
 	UM        string  `json:"um"`
 	PretCuTVA float64 `json:"pretCuTva"`
-	Ordine    int     `json:"ordine"`
+	// ProcentDinIntrare is the share of what goes in that this product comes
+	// out as, in percent (9.248, not 0.09248), to three decimals. Across the
+	// whole list it sums to 100: everything that goes in has to come out as
+	// something, waste included. The form uses it to fill the "ce iese"
+	// quantities from the carcass weight; it is never printed.
+	ProcentDinIntrare float64 `json:"procentDinIntrare"`
+	Ordine            int     `json:"ordine"`
 }
 
 // IntrareRow is a free-text row of the "ce intra" table.

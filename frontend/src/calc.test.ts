@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   ajusteazaMarja,
+  cantitatiDinProcente,
   diferenta,
   incarcaDescarca,
   marjaProfit,
   pretCuTvaDin,
   pretFaraTvaDin,
   round2,
+  round3,
+  sumaProcente,
   totals,
   valoare,
 } from './calc';
@@ -271,5 +274,74 @@ describe('ajusteazaMarja', () => {
 
   it('gives up on an empty table', () => {
     expect(ajusteazaMarja([], INTRARE, 0.25)).toBeUndefined();
+  });
+});
+
+describe('cantitatiDinProcente', () => {
+  it('splits the carcass by each product ratio', () => {
+    expect(cantitatiDinProcente([60, 30, 10], 100)).toEqual([60, 30, 10]);
+  });
+
+  it('reproduces the seeded proces verbal from the seeded ratios', () => {
+    // The ratios the app ships with, against the 162.2 Kg carcass they were
+    // derived from. Every product must come back to the quantity on the sheet.
+    const procente = [
+      9.248, 0.925, 1.233, 6.165, 0.617, 5.24, 6.782, 5.24, 1.233, 2.158, 7.398, 4.932, 6.473,
+      12.639, 7.398, 4.624, 11.097, 5.24, 1.358,
+    ];
+    expect(cantitatiDinProcente(procente, 162.2)).toEqual([
+      15, 1.5, 2, 10, 1, 8.5, 11, 8.5, 2, 3.5, 12, 8, 10.5, 20.5, 12, 7.5, 18, 8.5, 2.2,
+    ]);
+  });
+
+  it('lands on the carcass weight exactly when rounding would lose a ban', () => {
+    // A third each of 100 Kg rounds to 33.33 three times over, which is 99.99.
+    // The leftover ban goes to the largest remainder rather than evaporating.
+    const out = cantitatiDinProcente([33.333, 33.333, 33.334], 100);
+    expect(out.reduce((sum, q) => sum + q, 0)).toBe(100);
+  });
+
+  it('leaves a product that yields nothing at zero', () => {
+    const out = cantitatiDinProcente([33.333, 33.333, 33.334, 0], 100);
+    expect(out[3]).toBe(0);
+    expect(out.reduce((sum, q) => sum + q, 0)).toBe(100);
+  });
+
+  it('gives back nothing when nothing has gone in yet', () => {
+    expect(cantitatiDinProcente([60, 30, 10], 0)).toEqual([0, 0, 0]);
+  });
+
+  it('does not invent weight when the ratios fall short of 100%', () => {
+    // An unfinished column must not be silently scaled up to the whole carcass.
+    const out = cantitatiDinProcente([50, 25], 100);
+    expect(out).toEqual([50, 25]);
+  });
+});
+
+describe('round3', () => {
+  it('rounds half away from zero', () => {
+    expect(round3(9.2478)).toBe(9.248);
+    expect(round3(-9.2478)).toBe(-9.248);
+    expect(round3(0.9244999)).toBe(0.924);
+  });
+});
+
+describe('sumaProcente', () => {
+  it('adds the seeded ratios up to exactly 100', () => {
+    // Nineteen floats added left to right land on 99.99999999999999 without
+    // rounding, which would leave Setări insisting a correct column is wrong.
+    const procente = [
+      9.248, 0.925, 1.233, 6.165, 0.617, 5.24, 6.782, 5.24, 1.233, 2.158, 7.398, 4.932, 6.473,
+      12.639, 7.398, 4.624, 11.097, 5.24, 1.358,
+    ];
+    expect(sumaProcente(procente)).toBe(100);
+  });
+
+  it('reports a column that does not account for the whole carcass', () => {
+    expect(sumaProcente([60, 30])).toBe(90);
+  });
+
+  it('is zero for an empty list', () => {
+    expect(sumaProcente([])).toBe(0);
   });
 });

@@ -139,6 +139,7 @@ export namespace model {
 	    denumire: string;
 	    um: string;
 	    pretCuTva: number;
+	    procentDinIntrare: number;
 	    ordine: number;
 	
 	    static createFrom(source: any = {}) {
@@ -151,6 +152,7 @@ export namespace model {
 	        this.denumire = source["denumire"];
 	        this.um = source["um"];
 	        this.pretCuTva = source["pretCuTva"];
+	        this.procentDinIntrare = source["procentDinIntrare"];
 	        this.ordine = source["ordine"];
 	    }
 	}

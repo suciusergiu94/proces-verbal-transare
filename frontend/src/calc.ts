@@ -21,6 +21,26 @@ export function round2(value: number): number {
   return value < 0 ? -rounded : rounded;
 }
 
+/**
+ * Rounds to three decimals, half away from zero. Mirror of calc.Round3: the
+ * precision the carcass ratios are kept at.
+ */
+export function round3(value: number): number {
+  const rounded = Math.round(Math.abs(value) * 1000) / 1000;
+  return value < 0 ? -rounded : rounded;
+}
+
+/**
+ * What a column of carcass ratios accounts for, in percent.
+ *
+ * Rounded, because it is compared against 100: nineteen three-decimal ratios
+ * added left to right land on 99.99999999999999, and Setări must not call a
+ * correct column wrong over a floating-point crumb.
+ */
+export function sumaProcente(procente: number[]): number {
+  return round3(procente.reduce((sum, procent) => sum + procent, 0));
+}
+
 /** cantitate x pret, rounded to two decimals. */
 export function valoare(cantitate: number, pret: number): number {
   return round2(cantitate * pret);
@@ -242,6 +262,47 @@ function redistribuie(cantitati: number[], directie: number[], pas: number): num
       intregi[candidati[n].i] -= 1;
       rest += 1;
     }
+  }
+
+  return intregi.map((b) => round2(b * PAS_CANTITATE));
+}
+
+/**
+ * The "ce iese" quantities a carcass of `totalIntrare` yields, given each
+ * product's share of the input in percent (see model.Product.ProcentDinIntrare).
+ *
+ * The ratios are stored to three decimals and the quantities are kept to whole
+ * bani of a kilogram, so rounding each row on its own would leave the table a
+ * ban or two short of the carcass it came from. The leftovers are handed to the
+ * rows with the largest fractions until the total matches — the same
+ * largest-remainder method redistribuie uses — with one difference: the target
+ * is what the ratios themselves add up to, not the carcass weight. A column
+ * that only accounts for 75% of the input yields three quarters of a carcass;
+ * scaling it up to the whole would invent meat that was never cut.
+ *
+ * A product with a zero ratio stays at zero and never absorbs a leftover ban:
+ * a product the butchering does not produce cannot be booked a quantity.
+ *
+ * Like marjaProfit and ajusteazaMarja this has no counterpart in internal/calc
+ * — it fills the form, and only the quantities it produces are ever saved.
+ */
+export function cantitatiDinProcente(procente: number[], totalIntrare: number): number[] {
+  if (totalIntrare <= 0) return procente.map(() => 0);
+
+  // Each row's exact yield, counted in whole bani of a kilogram so the
+  // leftovers can be handed out as indivisible units.
+  const bani = procente.map((procent) => (Math.max(0, procent) / 100 / PAS_CANTITATE) * totalIntrare);
+  const intregi = bani.map((b) => Math.floor(b));
+  const tinta = Math.round(bani.reduce((sum, b) => sum + b, 0));
+
+  let rest = tinta - intregi.reduce((sum, b) => sum + b, 0);
+  const candidati = bani
+    .map((b, i) => ({ i, fractie: b - intregi[i] }))
+    .filter(({ i }) => procente[i] > 0)
+    .sort((a, b) => b.fractie - a.fractie);
+  for (let n = 0; rest > 0 && n < candidati.length; n++) {
+    intregi[candidati[n].i] += 1;
+    rest -= 1;
   }
 
   return intregi.map((b) => round2(b * PAS_CANTITATE));

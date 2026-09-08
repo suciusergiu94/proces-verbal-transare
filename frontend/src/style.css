@@ -362,9 +362,46 @@ tfoot td {
   }
 }
 
+/* Modal dialogs
+
+   Drawn by the page because window.confirm/alert never render in the app's
+   webview; see dialog.ts. */
+
+.modal {
+  max-width: 380px;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 25%);
+}
+
+.modal::backdrop {
+  background: rgb(0 0 0 / 35%);
+}
+
+.modal-text {
+  margin: 0 0 18px;
+  font-size: 15px;
+}
+
+.modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 /* The TVA rate is two or three characters wide; without a cap the auto table
    layout hands it as much room as a price column and squeezes Denumire. */
 td.cota,
 th.cota {
   width: 56px;
+}
+
+/* The carcass ratios in Setări must account for exactly 100% of what goes in;
+   the total says so plainly, since Salvează refuses until it does. */
+tfoot td.invalid {
+  color: var(--danger);
+  font-weight: 600;
 }

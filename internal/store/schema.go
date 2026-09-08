@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"time"
 
 	"proces-verbal-transare/internal/calc"
@@ -21,6 +22,7 @@ CREATE TABLE IF NOT EXISTS products (
   denumire TEXT NOT NULL,
   um TEXT NOT NULL DEFAULT 'Kg',
   pret_cu_tva REAL NOT NULL DEFAULT 0,
+  procent_din_intrare REAL NOT NULL DEFAULT 0,
   ordine INTEGER NOT NULL
 );
 
@@ -117,8 +119,55 @@ var seedIntrare = []model.IntrareRow{
 
 // seedIesireCantitati is the quantity for each seedProducts entry, in order.
 // The rest of every row — denumire, UM, price — is the product itself.
+//
+// The sheet this was copied from booked 1.2 Kg of deseu and left the remaining
+// kilogram of the 162.2 Kg carcass unaccounted for. It is booked as deseu here
+// instead, so the document accounts for the whole carcass and agrees with the
+// ratios in seedProcente. Deseu is priced at 0, so this moves no money at all:
+// the row's value, both totals in lei, Diferență and the margin are all exactly
+// what the signed sheet showed.
 var seedIesireCantitati = []float64{
-	15, 1.5, 2, 10, 1, 8.5, 11, 8.5, 2, 3.5, 12, 8, 10.5, 20.5, 12, 7.5, 18, 8.5, 1.2,
+	15, 1.5, 2, 10, 1, 8.5, 11, 8.5, 2, 3.5, 12, 8, 10.5, 20.5, 12, 7.5, 18, 8.5, 2.2,
+}
+
+// procenteDinCantitati turns what each product yielded into its share of what
+// went in, in percent, to three decimals.
+//
+// The last entry takes whatever the others leave over instead of its own
+// quotient, for two reasons. Independently rounded ratios miss 100% by a
+// thousandth or two, and the column has to land on it exactly — a carcass is
+// fully accounted for or the arithmetic is wrong. And a butchering rarely
+// yields back everything it consumed: the kilogram that evaporates has to be
+// booked somewhere. Both corrections go to the row that closes the list, which
+// in this app is Deseu fara valoare — the right place for meat that turned into
+// nothing in particular, and priced at 0, so absorbing them costs nothing.
+//
+// Everything comes back zero when nothing went in, and the residual is clamped
+// at zero if the products somehow already account for more than the input; the
+// column then does not reach 100% and Setări says so rather than this quietly
+// inventing a negative yield.
+func procenteDinCantitati(cantitati []float64, totalIntrare float64) []float64 {
+	out := make([]float64, len(cantitati))
+	if totalIntrare <= 0 || len(cantitati) == 0 {
+		return out
+	}
+	rest := 100.0
+	for i := 0; i < len(out)-1; i++ {
+		out[i] = calc.Round3(cantitati[i] / totalIntrare * 100)
+		rest -= out[i]
+	}
+	if rest < 0 {
+		rest = 0
+	}
+	out[len(out)-1] = calc.Round3(rest)
+	return out
+}
+
+// seedProcente is each seedProducts entry's share of the seeded carcass,
+// derived from the quantities above rather than written out by hand so the two
+// cannot drift apart.
+func seedProcente() []float64 {
+	return procenteDinCantitati(seedIesireCantitati, calc.TotalsIntrare(seedIntrare).Cantitate)
 }
 
 // seedIesirePreturiFaraTVA is each row's price without TVA as it was entered,
@@ -179,6 +228,27 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	// v3 added the carcass ratios. The column arrives empty, which would leave
+	// an install that has been in use looking at a list of zeros, so it is
+	// filled in from the oldest stored proces verbal — the same figures a fresh
+	// install is seeded with, taken from the user's own first butchering rather
+	// than from ours. This runs on the column's absence, so it happens exactly
+	// once: a later start must not overwrite ratios the user has since edited.
+	hasProcent, err := hasColumn(db, "products", "procent_din_intrare")
+	if err != nil {
+		return err
+	}
+	if !hasProcent {
+		if _, err := db.Exec(
+			`ALTER TABLE products ADD COLUMN procent_din_intrare REAL NOT NULL DEFAULT 0`,
+		); err != nil {
+			return err
+		}
+		if err := backfillProcente(db); err != nil {
+			return err
+		}
+	}
+
 	// Stamp the schema version so a future migration can tell this shape apart
 	// from whatever comes after it. Future migrations should switch on the
 	// current value of PRAGMA user_version.
@@ -186,8 +256,8 @@ func migrate(db *sql.DB) error {
 	if err := db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
 		return err
 	}
-	if version < 2 {
-		if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
+	if version < 3 {
+		if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
 			return err
 		}
 	}
@@ -218,10 +288,12 @@ func migrate(db *sql.DB) error {
 	// run 1..19: the seeded document links to them, and that link must hold
 	// whatever ids SQLite hands out.
 	productIDs := make([]int64, len(seedProducts))
+	procente := seedProcente()
 	for i, p := range seedProducts {
 		res, err := tx.Exec(
-			`INSERT INTO products (denumire, um, pret_cu_tva, ordine) VALUES (?, ?, ?, ?)`,
-			p.Denumire, p.UM, p.PretCuTVA, i,
+			`INSERT INTO products (denumire, um, pret_cu_tva, procent_din_intrare, ordine)
+			 VALUES (?, ?, ?, ?, ?)`,
+			p.Denumire, p.UM, p.PretCuTVA, procente[i], i,
 		)
 		if err != nil {
 			return err
@@ -301,6 +373,74 @@ func seedFirstDocument(tx *sql.Tx, productIDs []int64) error {
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			documentID, *r.ProductID, r.Pozitie, r.Denumire, r.UM, r.PretCuTVA,
 			r.Cantitate, r.PretFaraTVA, r.CotaTVA,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// backfillProcente fills the ratio column from the oldest stored proces verbal:
+// each product's share of that document's total intrare quantity, with the last
+// product in display order closing the list at 100% (see procenteDinCantitati).
+//
+// It leaves every ratio at zero when there is nothing to derive them from — no
+// products, no documents, or a document that recorded no input. Setări shows
+// the column total and refuses to save until it reaches 100%, so a database
+// that lands here asks the user for the figures instead of guessing at them.
+func backfillProcente(db *sql.DB) error {
+	var documentID int64
+	err := db.QueryRow(`SELECT id FROM documents ORDER BY id LIMIT 1`).Scan(&documentID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	var totalIntrare float64
+	if err := db.QueryRow(
+		`SELECT COALESCE(SUM(cantitate), 0) FROM document_intrare_rows WHERE document_id = ?`,
+		documentID,
+	).Scan(&totalIntrare); err != nil {
+		return err
+	}
+	if totalIntrare <= 0 {
+		return nil
+	}
+
+	// A product may appear on more than one row of the same document, so the
+	// quantities are summed per product rather than read row by row.
+	rows, err := db.Query(
+		`SELECT p.id, COALESCE((SELECT SUM(r.cantitate) FROM document_iesire_rows r
+		                        WHERE r.document_id = ? AND r.product_id = p.id), 0)
+		 FROM products p ORDER BY p.ordine, p.id`,
+		documentID,
+	)
+	if err != nil {
+		return err
+	}
+	var ids []int64
+	var cantitati []float64
+	for rows.Next() {
+		var id int64
+		var cantitate float64
+		if err := rows.Scan(&id, &cantitate); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+		cantitati = append(cantitati, cantitate)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	procente := procenteDinCantitati(cantitati, totalIntrare)
+	for i, id := range ids {
+		if _, err := db.Exec(
+			`UPDATE products SET procent_din_intrare = ? WHERE id = ?`, procente[i], id,
 		); err != nil {
 			return err
 		}

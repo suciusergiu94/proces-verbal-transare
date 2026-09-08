@@ -71,7 +71,8 @@ func (s *Store) SaveSettings(in model.Settings) error {
 // ListProducts returns every product ordered by ordine.
 func (s *Store) ListProducts() ([]model.Product, error) {
 	rows, err := s.db.Query(
-		`SELECT id, denumire, um, pret_cu_tva, ordine FROM products ORDER BY ordine, id`,
+		`SELECT id, denumire, um, pret_cu_tva, procent_din_intrare, ordine
+		 FROM products ORDER BY ordine, id`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("citire produse: %w", err)
@@ -81,7 +82,7 @@ func (s *Store) ListProducts() ([]model.Product, error) {
 	out := []model.Product{}
 	for rows.Next() {
 		var p model.Product
-		if err := rows.Scan(&p.ID, &p.Denumire, &p.UM, &p.PretCuTVA, &p.Ordine); err != nil {
+		if err := rows.Scan(&p.ID, &p.Denumire, &p.UM, &p.PretCuTVA, &p.ProcentDinIntrare, &p.Ordine); err != nil {
 			return nil, fmt.Errorf("citire produs: %w", err)
 		}
 		out = append(out, p)
@@ -103,8 +104,9 @@ func (s *Store) SaveProducts(in []model.Product) error {
 	for i, p := range in {
 		if p.ID == 0 {
 			res, err := tx.Exec(
-				`INSERT INTO products (denumire, um, pret_cu_tva, ordine) VALUES (?, ?, ?, ?)`,
-				p.Denumire, p.UM, p.PretCuTVA, i,
+				`INSERT INTO products (denumire, um, pret_cu_tva, procent_din_intrare, ordine)
+				 VALUES (?, ?, ?, ?, ?)`,
+				p.Denumire, p.UM, p.PretCuTVA, p.ProcentDinIntrare, i,
 			)
 			if err != nil {
 				return fmt.Errorf("adaugare produs %q: %w", p.Denumire, err)
@@ -117,8 +119,9 @@ func (s *Store) SaveProducts(in []model.Product) error {
 			continue
 		}
 		if _, err := tx.Exec(
-			`UPDATE products SET denumire = ?, um = ?, pret_cu_tva = ?, ordine = ? WHERE id = ?`,
-			p.Denumire, p.UM, p.PretCuTVA, i, p.ID,
+			`UPDATE products SET denumire = ?, um = ?, pret_cu_tva = ?,
+			        procent_din_intrare = ?, ordine = ? WHERE id = ?`,
+			p.Denumire, p.UM, p.PretCuTVA, p.ProcentDinIntrare, i, p.ID,
 		); err != nil {
 			return fmt.Errorf("actualizare produs %q: %w", p.Denumire, err)
 		}

@@ -11,6 +11,7 @@ import {
   SaveSettings,
 } from '../wailsjs/go/main/App';
 import { model } from '../wailsjs/go/models';
+import { showAlert } from './dialog';
 
 export type Document = model.Document;
 export type DocumentSummary = model.DocumentSummary;
@@ -35,5 +36,5 @@ export {
 /** Shows a Go-side error to the user in Romanian. */
 export function showError(prefix: string, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
-  window.alert(`${prefix}: ${message}`);
+  void showAlert(`${prefix}: ${message}`);
 }

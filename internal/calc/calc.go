@@ -24,6 +24,19 @@ func Round2(v float64) float64 {
 	return r
 }
 
+// Round3 rounds to three decimals, half away from zero. Ratios of the carcass
+// are kept at this precision rather than two: at two decimals one hundredth of
+// a percent of a 162.2 Kg carcass is 16 grams, enough to shift a row's rounded
+// quantity, and the ratios must give back the quantities they were derived
+// from.
+func Round3(v float64) float64 {
+	r := math.Round(math.Abs(v)*1000) / 1000
+	if v < 0 {
+		return -r
+	}
+	return r
+}
+
 // ValoareFaraTVA is cantitate x pret fara TVA.
 func ValoareFaraTVA(cantitate, pret float64) float64 {
 	return Round2(cantitate * pret)
