@@ -70,29 +70,38 @@ func (a *App) GetDocument(id int64) (model.Document, error) {
 	return a.store.GetDocument(id)
 }
 
-// NewDocumentDraft builds an unsaved document prefilled from the settings, the
-// product list and the previously saved document.
-func (a *App) NewDocumentDraft() (model.Document, error) {
+// ListTemplates returns every "ce iese" template with its products.
+func (a *App) ListTemplates() ([]model.Template, error) {
+	return a.store.ListTemplates()
+}
+
+// SaveTemplates replaces the stored templates with the given ones.
+func (a *App) SaveTemplates(templates []model.Template) error {
+	return a.store.SaveTemplates(templates)
+}
+
+// NewDocumentDraft builds an unsaved document from the given template,
+// prefilled from the settings and the previous document made from that same
+// template.
+func (a *App) NewDocumentDraft(templateID int64) (model.Document, error) {
 	settings, err := a.store.GetSettings()
 	if err != nil {
 		return model.Document{}, err
 	}
-	templates, err := a.store.ListTemplates()
+	template, err := a.store.GetTemplate(templateID)
 	if err != nil {
 		return model.Document{}, err
 	}
-	if len(templates) == 0 {
-		return model.Document{}, fmt.Errorf("niciun sablon disponibil")
-	}
-	products := templates[0].Products
-	templateID := templates[0].ID
 	last, hasLast, err := a.store.LastDocument(templateID)
 	if err != nil {
 		return model.Document{}, err
 	}
 
+	// Named tid, not id: the product loop below binds its own id, and a
+	// shadowed pointer target there would be a very quiet bug.
+	tid := template.ID
 	draft := model.Document{
-		TemplateID: &templateID,
+		TemplateID: &tid,
 		Nr:         settings.NextNr,
 		Data:       time.Now().Format("2006-01-02"),
 		Intrare:    []model.IntrareRow{},
@@ -129,10 +138,14 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 		}
 	}
 	if len(draft.Intrare) == 0 {
+		// Nothing has been butchered under this template yet, so there is no
+		// shape to carry forward. The template's own name is the best answer
+		// for what went in — it is named for exactly that.
 		draft.Intrare = append(draft.Intrare, model.IntrareRow{
-			Pozitie: 0,
-			UM:      "Kg",
-			CotaTVA: settings.CotaTVA,
+			Pozitie:  0,
+			Denumire: template.Nume,
+			UM:       "Kg",
+			CotaTVA:  settings.CotaTVA,
 		})
 	}
 
@@ -141,7 +154,7 @@ func (a *App) NewDocumentDraft() (model.Document, error) {
 	// document arrive fully priced instead of with a column of zeros; the user
 	// can still override either price, or the row's rate, afterwards. An
 	// unusable rate leaves the price at zero rather than storing an infinity.
-	for i, p := range products {
+	for i, p := range template.Products {
 		id := p.ID
 		pretFaraTVA, _ := calc.PretFaraTVA(p.PretCuTVA, settings.CotaTVA)
 		draft.Iesire = append(draft.Iesire, model.IesireRow{

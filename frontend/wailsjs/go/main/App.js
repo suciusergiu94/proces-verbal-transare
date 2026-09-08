@@ -22,22 +22,22 @@ export function ListDocuments() {
   return window['go']['main']['App']['ListDocuments']();
 }
 
-export function ListProducts() {
-  return window['go']['main']['App']['ListProducts']();
+export function ListTemplates() {
+  return window['go']['main']['App']['ListTemplates']();
 }
 
-export function NewDocumentDraft() {
-  return window['go']['main']['App']['NewDocumentDraft']();
+export function NewDocumentDraft(arg1) {
+  return window['go']['main']['App']['NewDocumentDraft'](arg1);
 }
 
 export function SaveDocument(arg1) {
   return window['go']['main']['App']['SaveDocument'](arg1);
 }
 
-export function SaveProducts(arg1) {
-  return window['go']['main']['App']['SaveProducts'](arg1);
-}
-
 export function SaveSettings(arg1) {
   return window['go']['main']['App']['SaveSettings'](arg1);
+}
+
+export function SaveTemplates(arg1) {
+  return window['go']['main']['App']['SaveTemplates'](arg1);
 }
