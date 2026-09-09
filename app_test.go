@@ -204,6 +204,7 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 	first.Gestiune = "Magazin Ocolis"
 	first.Intrare = []model.IntrareRow{
 		{Denumire: "Carcasa porc f cap", UM: "Kg", Cantitate: 162.20, PretFaraTVA: 12.50, PretCuTVA: 14.03},
+		{Denumire: "Slanina", UM: "Kg", Cantitate: 8, PretFaraTVA: 5, PretCuTVA: 5.55, CotaTVA: 19},
 	}
 	if _, err := a.SaveDocument(first); err != nil {
 		t.Fatalf("SaveDocument: %v", err)
@@ -219,8 +220,23 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 	if draft.Gestiune != "Magazin Bradet" {
 		t.Errorf("draft.Gestiune = %q, want the default gestiune from the settings", draft.Gestiune)
 	}
-	if len(draft.Intrare) != 1 || draft.Intrare[0].Denumire != "Carcasa porc f cap" {
+	if len(draft.Intrare) != 2 {
 		t.Fatalf("draft.Intrare = %+v, want the previous intrare rows", draft.Intrare)
+	}
+	// The first row names what was butchered, so it is the template's to name —
+	// the previous document's "Carcasa porc f cap" does not carry over.
+	if draft.Intrare[0].Denumire != "Carcasa Porc" {
+		t.Errorf("draft.Intrare[0].Denumire = %q, want the template's name",
+			draft.Intrare[0].Denumire)
+	}
+	// Everything else about that row still travels, and the rows below it are
+	// copied whole: only row 0 is the template's to name.
+	if draft.Intrare[0].UM != "Kg" {
+		t.Errorf("draft.Intrare[0].UM = %q, want %q", draft.Intrare[0].UM, "Kg")
+	}
+	if draft.Intrare[1].Denumire != "Slanina" || draft.Intrare[1].CotaTVA != 19 {
+		t.Errorf("draft.Intrare[1] = %+v, want the previous row carried over whole",
+			draft.Intrare[1])
 	}
 	if draft.Intrare[0].ID != 0 {
 		t.Errorf("draft.Intrare[0].ID = %d, want 0 (prefilled rows must be unsaved)", draft.Intrare[0].ID)
@@ -238,6 +254,45 @@ func TestNewDocumentDraftPrefillsFromLastDocument(t *testing.T) {
 	}
 	if draft.Intrare[0].PretCuTVA != 0 {
 		t.Errorf("draft.Intrare[0].PretCuTVA = %v, want 0", draft.Intrare[0].PretCuTVA)
+	}
+}
+
+// Renaming a template renames the row that says what was butchered, on every
+// document created from it afterwards. Without this the seeded template is
+// already wrong on a fresh install — its document's row reads "Carcasa" while
+// the template is "Carcasa Porc" — and a rename would never show up at all.
+func TestNewDocumentDraftNamesTheIntrareRowAfterARenamedTemplate(t *testing.T) {
+	a := newTestApp(t)
+	id := seededTemplateID(t, a)
+
+	first, err := a.NewDocumentDraft(id)
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	first.Intrare = []model.IntrareRow{{Denumire: "Carcasa", UM: "Kg", Cantitate: 100}}
+	if _, err := a.SaveDocument(first); err != nil {
+		t.Fatalf("SaveDocument: %v", err)
+	}
+
+	templates, err := a.ListTemplates()
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	templates[0].Nume = "Carcasa Porc fara cap"
+	if err := a.SaveTemplates(templates); err != nil {
+		t.Fatalf("SaveTemplates: %v", err)
+	}
+
+	draft, err := a.NewDocumentDraft(id)
+	if err != nil {
+		t.Fatalf("NewDocumentDraft: %v", err)
+	}
+	if len(draft.Intrare) != 1 {
+		t.Fatalf("len(draft.Intrare) = %d, want 1", len(draft.Intrare))
+	}
+	if draft.Intrare[0].Denumire != "Carcasa Porc fara cap" {
+		t.Errorf("draft.Intrare[0].Denumire = %q, want the template's new name",
+			draft.Intrare[0].Denumire)
 	}
 }
 

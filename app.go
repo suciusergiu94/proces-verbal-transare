@@ -129,9 +129,20 @@ func (a *App) NewDocumentDraft(templateID int64) (model.Document, error) {
 			// the "ce iese" split is derived from it, so a field left
 			// unnoticed would quietly fill the whole second table with the
 			// previous carcass's numbers.
+			//
+			// The first row is the exception: it is the row that says what was
+			// butchered, which is the template's to name and not the previous
+			// document's. Carrying its denumire forward instead would mean a
+			// renamed template never showed its new name, and would leave the
+			// seeded template disagreeing with its own seeded document from
+			// the first launch. Every other row is copied whole.
+			denumire := r.Denumire
+			if i == 0 {
+				denumire = template.Nume
+			}
 			draft.Intrare = append(draft.Intrare, model.IntrareRow{
 				Pozitie:  i,
-				Denumire: r.Denumire,
+				Denumire: denumire,
 				UM:       r.UM,
 				CotaTVA:  r.CotaTVA,
 			})
@@ -139,8 +150,8 @@ func (a *App) NewDocumentDraft(templateID int64) (model.Document, error) {
 	}
 	if len(draft.Intrare) == 0 {
 		// Nothing has been butchered under this template yet, so there is no
-		// shape to carry forward. The template's own name is the best answer
-		// for what went in — it is named for exactly that.
+		// shape to carry forward — not even a unit or a rate. The name is the
+		// same one the branch above applies, for the same reason.
 		draft.Intrare = append(draft.Intrare, model.IntrareRow{
 			Pozitie:  0,
 			Denumire: template.Nume,
