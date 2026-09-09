@@ -230,6 +230,12 @@ func migrate(db *sql.DB) error {
 	if _, err := db.Exec(schemaSQL); err != nil {
 		return err
 	}
+	// A crash between dropAllTables and here is safe: user_version lives in the
+	// database header, not in a table, so it survives the drops untouched and is
+	// only stamped to schemaVersion after schemaSQL has recreated everything.
+	// The next Open then sees the same stale, non-zero version again, drops
+	// whatever partial shape remains (every drop is IF EXISTS), and reseeds —
+	// the reset is self-healing at any interleaving.
 	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
 		return err
 	}

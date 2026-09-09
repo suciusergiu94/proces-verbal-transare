@@ -1,5 +1,6 @@
 import { DocumentSummary, ListDocuments, ListTemplates, showError } from './api';
 import type { Template } from './api';
+import { showAlert } from './dialog';
 import { formatDateRO } from './format';
 import { navigate } from './router';
 import { DRAFT_PREFIX, draftHash, draftTemplateId, isDraftHash } from './templates';
@@ -96,7 +97,15 @@ export async function renderSidebar(el: HTMLElement): Promise<void> {
   el.querySelector<HTMLButtonElement>('#new-doc')!.addEventListener('click', () => {
     if (menuEl === null) {
       // One template, or none loaded: go where there is only one place to go.
-      if (templates.length === 1) navigate(draftHash(templates[0].id));
+      if (templates.length === 1) {
+        navigate(draftHash(templates[0].id));
+        return;
+      }
+      // No templates loaded at all: reachable only after ListDocuments or
+      // ListTemplates threw above, so the user has already seen an error.
+      // Doing nothing here would leave the button looking broken on top of
+      // that; say so instead.
+      void showAlert('Niciun șablon disponibil. Reîncărcați aplicația și încercați din nou.');
       return;
     }
     menuEl.toggleAttribute('hidden');

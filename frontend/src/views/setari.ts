@@ -4,7 +4,14 @@ import { sumaProcente } from '../calc';
 import { showAlert, showConfirm } from '../dialog';
 import { formatNumber, parseNumber } from '../format';
 import { escapeHtml } from '../sidebar';
-import { duplicateTemplate, emptyTemplate, validateTemplates } from '../templates';
+import {
+  duplicateTemplate,
+  emptyTemplate,
+  expandedAfterInsert,
+  expandedAfterRemove,
+  formatProcent,
+  validateTemplates,
+} from '../templates';
 
 /** Renders the settings screen: global settings and one section per template. */
 export async function renderSetariView(outlet: HTMLElement): Promise<void> {
@@ -47,7 +54,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
       .join('');
 
     return `
-      <section class="template-section${expanded.has(ti) ? ' open' : ''}" data-template="${ti}">
+      <section class="template-section" data-template="${ti}">
         <div class="template-head">
           <button class="btn-icon template-toggle" data-toggle="${ti}"
                   title="${expanded.has(ti) ? 'Restrânge' : 'Extinde'}">${expanded.has(ti) ? '▾' : '▸'}</button>
@@ -133,7 +140,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
       const cell = outlet.querySelector<HTMLElement>(`[data-total="${ti}"]`);
       if (!cell) return;
       const total = sumaProcente(t.products.map((p) => p.procentDinIntrare));
-      cell.textContent = `${formatNumber(total, 3)} %`;
+      cell.textContent = `${formatProcent(total)} %`;
       cell.classList.toggle('invalid', total !== 100);
     });
   }
@@ -229,9 +236,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
         // Every index past the insertion point has shifted, so the open set is
         // rebuilt rather than patched: the copy opens, and the rest follow the
         // sections they were attached to.
-        expanded = new Set(
-          [...expanded].map((n) => (n > ti ? n + 1 : n)).concat(ti + 1),
-        );
+        expanded = expandedAfterInsert(expanded, ti + 1);
         renderAll();
       });
     });
@@ -283,7 +288,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
       return;
     }
     templates.splice(ti, 1);
-    expanded = new Set([...expanded].filter((n) => n !== ti).map((n) => (n > ti ? n - 1 : n)));
+    expanded = expandedAfterRemove(expanded, ti);
     renderAll();
   }
 

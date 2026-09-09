@@ -148,6 +148,12 @@ func (s *Store) SaveTemplates(in []model.Template) error {
 // diffs the templates themselves. template_id is taken from the owning
 // template rather than from the incoming row, so a product cannot be moved
 // into a template it was not sent under.
+//
+// This assumes no product id appears under two templates in the same call —
+// unenforced here, but also unreachable from the frontend: setari.ts only
+// ever sends ids the database itself handed out for that template, and
+// duplicateTemplate zeroes every id it copies, so a duplicated product always
+// arrives as an insert rather than a claim on another template's row.
 func saveTemplateProducts(tx *sql.Tx, templateID int64, products []model.Product) error {
 	keep := make(map[int64]bool, len(products))
 	for i, p := range products {
@@ -177,7 +183,7 @@ func saveTemplateProducts(tx *sql.Tx, templateID int64, products []model.Product
 		keep[p.ID] = true
 	}
 
-	stale, err := staleIDs(tx, `SELECT id FROM products WHERE template_id = `+fmt.Sprint(templateID), keep)
+	stale, err := staleIDs(tx, `SELECT id FROM products WHERE template_id = ?`, keep, templateID)
 	if err != nil {
 		return fmt.Errorf("salvare produse: %w", err)
 	}
@@ -190,9 +196,11 @@ func saveTemplateProducts(tx *sql.Tx, templateID int64, products []model.Product
 }
 
 // staleIDs runs a query returning one id column and reports those absent from
-// keep — the rows a save has dropped.
-func staleIDs(tx *sql.Tx, query string, keep map[int64]bool) ([]int64, error) {
-	rows, err := tx.Query(query)
+// keep — the rows a save has dropped. args are passed through to Query, so a
+// query with placeholders parameterises like every other query in this
+// package rather than being hand-built.
+func staleIDs(tx *sql.Tx, query string, keep map[int64]bool, args ...any) ([]int64, error) {
+	rows, err := tx.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}

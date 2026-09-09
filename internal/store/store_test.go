@@ -121,15 +121,41 @@ func TestOpenResetsAPreReleaseDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sql.Open: %v", err)
 	}
+	// The full v4 shape, not just settings and products: the real databases
+	// this path runs against also have documents and their two row tables, and
+	// document_iesire_rows.product_id references products — with store.Open
+	// connecting under foreign_keys(1), dropAllTables' order actually matters
+	// here, not just in theory.
 	if _, err := db.Exec(`
 		CREATE TABLE settings (id INTEGER PRIMARY KEY CHECK (id = 1), unitate_nume TEXT NOT NULL DEFAULT '',
 		  next_nr INTEGER NOT NULL DEFAULT 1, cota_tva REAL NOT NULL DEFAULT 11, gestiune TEXT NOT NULL DEFAULT '');
 		CREATE TABLE products (id INTEGER PRIMARY KEY AUTOINCREMENT, denumire TEXT NOT NULL,
 		  um TEXT NOT NULL DEFAULT 'Kg', pret_cu_tva REAL NOT NULL DEFAULT 0,
 		  procent_din_intrare REAL NOT NULL DEFAULT 0, ordine INTEGER NOT NULL);
+		CREATE TABLE documents (id INTEGER PRIMARY KEY AUTOINCREMENT, nr INTEGER NOT NULL,
+		  data TEXT NOT NULL, gestiune TEXT NOT NULL, document_referinta TEXT NOT NULL DEFAULT '',
+		  diferenta_tip TEXT NOT NULL DEFAULT '', diferenta_valoare REAL NOT NULL DEFAULT 0,
+		  incarca_descarca_tip TEXT NOT NULL DEFAULT '', incarca_descarca_valoare REAL NOT NULL DEFAULT 0,
+		  gestionar TEXT NOT NULL DEFAULT '', calculator TEXT NOT NULL DEFAULT '',
+		  vizat_compartiment_productie TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+		CREATE TABLE document_intrare_rows (id INTEGER PRIMARY KEY AUTOINCREMENT,
+		  document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE, pozitie INTEGER NOT NULL,
+		  denumire TEXT NOT NULL DEFAULT '', um TEXT NOT NULL DEFAULT '', cantitate REAL NOT NULL DEFAULT 0,
+		  pret_fara_tva REAL NOT NULL DEFAULT 0, pret_cu_tva REAL NOT NULL DEFAULT 0, cota_tva REAL NOT NULL DEFAULT 11);
+		CREATE TABLE document_iesire_rows (id INTEGER PRIMARY KEY AUTOINCREMENT,
+		  document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+		  product_id INTEGER REFERENCES products(id) ON DELETE SET NULL, pozitie INTEGER NOT NULL,
+		  denumire TEXT NOT NULL, um TEXT NOT NULL, pret_cu_tva REAL NOT NULL, cantitate REAL NOT NULL DEFAULT 0,
+		  pret_fara_tva REAL NOT NULL DEFAULT 0, cota_tva REAL NOT NULL DEFAULT 11);
 		INSERT INTO settings (id, unitate_nume, next_nr) VALUES (1, 'Vechi SRL', 42);
-		INSERT INTO products (denumire, um, pret_cu_tva, procent_din_intrare, ordine)
-		  VALUES ('Ceva vechi', 'Kg', 1, 100, 0);
+		INSERT INTO products (id, denumire, um, pret_cu_tva, procent_din_intrare, ordine)
+		  VALUES (1, 'Ceva vechi', 'Kg', 1, 100, 0);
+		INSERT INTO documents (id, nr, data, gestiune, created_at, updated_at)
+		  VALUES (1, 42, '2020-01-01', 'Gestiune veche', '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z');
+		INSERT INTO document_intrare_rows (document_id, pozitie, denumire, um, cantitate, pret_fara_tva, pret_cu_tva, cota_tva)
+		  VALUES (1, 0, 'Carcasa veche', 'Kg', 100, 10, 11.1, 11);
+		INSERT INTO document_iesire_rows (document_id, product_id, pozitie, denumire, um, pret_cu_tva, cantitate, pret_fara_tva, cota_tva)
+		  VALUES (1, 1, 0, 'Ceva vechi', 'Kg', 1, 100, 0.9, 11);
 		PRAGMA user_version = 4;
 	`); err != nil {
 		t.Fatalf("build v4 database: %v", err)

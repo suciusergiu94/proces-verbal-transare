@@ -1,15 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import type { Product, Template } from './api';
+import type { IesireRow, Product, Template } from './api';
 import {
   DRAFT_PREFIX,
+  cantitatiPerProdus,
   draftHash,
   draftTemplateId,
   duplicateTemplate,
   emptyTemplate,
+  expandedAfterInsert,
+  expandedAfterRemove,
+  formatProcent,
   isDraftHash,
   templatesCuProcenteNoi,
   validateTemplates,
 } from './templates';
+
+function iesireRow(over: Partial<IesireRow> = {}): IesireRow {
+  return {
+    id: 0,
+    productId: undefined,
+    pozitie: 0,
+    denumire: 'Produs',
+    um: 'Kg',
+    pretCuTva: 10,
+    cantitate: 0,
+    pretFaraTva: 0,
+    cotaTva: 11,
+    ...over,
+  } as IesireRow;
+}
 
 function product(over: Partial<Product> = {}): Product {
   return {
@@ -181,5 +200,75 @@ describe('templatesCuProcenteNoi', () => {
   it('does not mutate its input', () => {
     templatesCuProcenteNoi([porc, vitel], 1, new Map([[10, 30], [11, 70]]));
     expect(porc.products[0].procentDinIntrare).toBe(60);
+  });
+});
+
+describe('formatProcent', () => {
+  it('renders three decimals with a comma, on an integer', () => {
+    expect(formatProcent(100)).toBe('100,000');
+  });
+
+  it('renders three decimals with a comma, on a fractional value', () => {
+    expect(formatProcent(97.5)).toBe('97,500');
+  });
+});
+
+describe('cantitatiPerProdus', () => {
+  it('sums quantities by product id', () => {
+    const out = cantitatiPerProdus([
+      iesireRow({ productId: 10, cantitate: 3 }),
+      iesireRow({ productId: 11, cantitate: 5 }),
+    ]);
+    expect(out.get(10)).toBe(3);
+    expect(out.get(11)).toBe(5);
+  });
+
+  it('accumulates rows that share a product id', () => {
+    const out = cantitatiPerProdus([
+      iesireRow({ productId: 10, cantitate: 3 }),
+      iesireRow({ productId: 10, cantitate: 4 }),
+    ]);
+    expect(out.get(10)).toBe(7);
+  });
+
+  it('ignores rows with no product', () => {
+    const out = cantitatiPerProdus([
+      iesireRow({ productId: undefined, cantitate: 9 }),
+      iesireRow({ productId: 10, cantitate: 3 }),
+    ]);
+    expect(out.size).toBe(1);
+    expect(out.get(10)).toBe(3);
+  });
+});
+
+describe('expandedAfterInsert', () => {
+  it('opens the new section when inserting before every expanded one', () => {
+    expect(expandedAfterInsert(new Set([1, 2]), 0)).toEqual(new Set([0, 2, 3]));
+  });
+
+  it('opens the new section when inserting exactly at an expanded index', () => {
+    expect(expandedAfterInsert(new Set([1]), 1)).toEqual(new Set([1, 2]));
+  });
+
+  it('leaves earlier expanded sections alone when inserting after them', () => {
+    expect(expandedAfterInsert(new Set([0]), 2)).toEqual(new Set([0, 2]));
+  });
+
+  it('shifts every expanded section that is not before the insertion point', () => {
+    expect(expandedAfterInsert(new Set([0, 1, 3]), 1)).toEqual(new Set([0, 2, 1, 4]));
+  });
+});
+
+describe('expandedAfterRemove', () => {
+  it('drops the removed index and shifts everything after it down', () => {
+    expect(expandedAfterRemove(new Set([0, 1, 3]), 1)).toEqual(new Set([0, 2]));
+  });
+
+  it('leaves earlier expanded sections alone when removing after them', () => {
+    expect(expandedAfterRemove(new Set([0]), 2)).toEqual(new Set([0]));
+  });
+
+  it('copes with removing an index that was itself expanded, among several', () => {
+    expect(expandedAfterRemove(new Set([0, 2, 4]), 2)).toEqual(new Set([0, 3]));
   });
 });

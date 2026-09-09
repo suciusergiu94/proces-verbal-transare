@@ -26,7 +26,7 @@ import { formatDateRO, formatNumber, parseDateRO, parseNumber } from '../format'
 import { navigate } from '../router';
 import { showToast } from '../toast';
 import { escapeHtml } from '../sidebar';
-import { DRAFT_PREFIX, draftHash, templatesCuProcenteNoi } from '../templates';
+import { cantitatiPerProdus, DRAFT_PREFIX, draftHash, templatesCuProcenteNoi } from '../templates';
 
 // documentInputAbort holds the AbortController for the currently-attached
 // `input` listener. renderDocumentView runs afresh on every hashchange *and*
@@ -117,6 +117,12 @@ export async function renderDocumentView(
   renderAll();
 
   function renderAll(): void {
+    // The one condition a deleted template is judged by: the document's own
+    // templateId, not a proxy like an empty procente map or a blank name,
+    // which could disagree with each other if a template with zero products
+    // were ever possible (SaveTemplates does not itself forbid that; only the
+    // frontend's validateTemplates does).
+    const templateDeleted = doc.templateId == null;
     outlet.innerHTML = `
       <h1>${doc.id === 0 ? 'Document nou' : `Proces verbal NR ${doc.nr}`}</h1>
 
@@ -131,7 +137,7 @@ export async function renderDocumentView(
         </div>
         <div class="field">
           <label for="f-sablon">Șablon</label>
-          <input id="f-sablon" value="${escapeHtml(templateNume || 'șters')}" readonly />
+          <input id="f-sablon" value="${escapeHtml(templateDeleted ? 'șters' : templateNume)}" readonly />
         </div>
         <div class="field">
           <label for="f-nr">NR</label>
@@ -162,12 +168,12 @@ export async function renderDocumentView(
 
       <h2>Ce iese</h2>
       ${
-        procente.size === 0
+        templateDeleted
           ? `<p class="empty">Șablonul acestui document a fost șters; cantitățile nu se
              mai completează automat din cantitatea de la "ce intră".</p>`
           : ''
       }
-      ${procente.size === 0 ? '' : marjaRow()}
+      ${marjaRow(templateDeleted)}
       ${iesireTable()}
 
       <div class="footer-grid footer-computed">
@@ -213,13 +219,18 @@ export async function renderDocumentView(
     recompute();
   }
 
-  /** The margin controls: nudging the split, and saving it back to the template. */
-  function marjaRow(): string {
+  /**
+   * The margin readout, always shown — it is derived straight from the rows
+   * (see recompute) and has nothing to do with templates. Only the +/-
+   * buttons and "Salvează procentele noi" depend on a template to redistribute
+   * or save ratios against, so only those are hidden once it is gone.
+   */
+  function marjaRow(templateDeleted: boolean): string {
     return `
       <div class="marja">
         <label for="f-marja">Marja de profit</label>
         <input id="f-marja" class="num" readonly tabindex="-1" />
-        <div class="marja-pas">
+        <div class="marja-pas" ${templateDeleted ? 'hidden' : ''}>
           <button class="btn-icon" id="marja-minus" type="button" title="Scade marja cu ${PAS_MARJA} % redistribuind cantitățile">−</button>
           <button class="btn-icon" id="marja-plus" type="button" title="Crește marja cu ${PAS_MARJA} % redistribuind cantitățile">+</button>
         </div>
@@ -227,7 +238,7 @@ export async function renderDocumentView(
           class="btn marja-salveaza"
           id="save-procente"
           type="button"
-          ${marjaNudged ? '' : 'hidden'}
+          ${templateDeleted || !marjaNudged ? 'hidden' : ''}
         >Salvează procentele noi</button>
       </div>`;
   }
@@ -420,16 +431,7 @@ export async function renderDocumentView(
       return;
     }
 
-    const cantitatiPerProdus = new Map<number, number>();
-    doc.iesire.forEach((row) => {
-      if (row.productId == null) return;
-      cantitatiPerProdus.set(
-        row.productId,
-        (cantitatiPerProdus.get(row.productId) ?? 0) + row.cantitate,
-      );
-    });
-
-    const actualizate = templatesCuProcenteNoi(stored, doc.templateId, cantitatiPerProdus);
+    const actualizate = templatesCuProcenteNoi(stored, doc.templateId, cantitatiPerProdus(doc.iesire));
     if (actualizate === undefined) {
       showToast('Nu există cantități din care să se calculeze procentele.');
       return;
