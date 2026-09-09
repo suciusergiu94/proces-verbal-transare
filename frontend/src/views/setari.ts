@@ -13,8 +13,20 @@ import {
   validateTemplates,
 } from '../templates';
 
-/** Renders the settings screen: global settings and one section per template. */
-export async function renderSetariView(outlet: HTMLElement): Promise<void> {
+/**
+ * Renders the settings screen: global settings and one section per template.
+ *
+ * refreshSidebar is called after a successful save because this screen is the
+ * only place templates are created, renamed and deleted, and the sidebar's
+ * "+ Document nou" menu is drawn from that list: without it the menu keeps
+ * offering whatever templates existed when the sidebar last rendered — most
+ * visibly, an install that adds its second template here would go on skipping
+ * the menu entirely until the app was restarted.
+ */
+export async function renderSetariView(
+  outlet: HTMLElement,
+  refreshSidebar: () => Promise<void>,
+): Promise<void> {
   let settings: Settings;
   let templates: Template[];
   // Which sections are open. View state only, never persisted: a shop with
@@ -315,6 +327,7 @@ export async function renderSetariView(outlet: HTMLElement): Promise<void> {
       await SaveTemplates(templates);
       templates = await ListTemplates();
       renderAll();
+      await refreshSidebar();
       outlet.querySelector('#status')!.textContent = 'Setările au fost salvate.';
     } catch (err) {
       showError('Setările nu au putut fi salvate', err);

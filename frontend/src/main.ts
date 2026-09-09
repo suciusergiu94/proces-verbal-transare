@@ -39,7 +39,7 @@ startRouter(
     },
     {
       pattern: /^#\/setari$/,
-      render: (el) => renderSetariView(el),
+      render: (el) => renderSetariView(el, refreshSidebar),
     },
   ],
   outlet,
