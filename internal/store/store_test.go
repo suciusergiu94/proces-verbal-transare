@@ -39,18 +39,36 @@ func newEmptyTestStore(t *testing.T) *Store {
 	return s
 }
 
-func TestOpenSeedsOneTemplateWithEveryProduct(t *testing.T) {
+func TestOpenSeedsBothTemplatesWithEveryProduct(t *testing.T) {
 	s := newTestStore(t)
 
 	templates, err := s.ListTemplates()
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(templates) != 1 {
-		t.Fatalf("len(templates) = %d, want 1", len(templates))
+	if len(templates) != 2 {
+		t.Fatalf("len(templates) = %d, want 2", len(templates))
 	}
 	if templates[0].Nume != "Carcasa Porc" {
 		t.Errorf("nume = %q, want %q", templates[0].Nume, "Carcasa Porc")
+	}
+	if templates[1].Nume != "Pulpa vita Angus" {
+		t.Errorf("nume = %q, want %q", templates[1].Nume, "Pulpa vita Angus")
+	}
+	if len(templates[1].Products) != len(vitaProducts) {
+		t.Fatalf("len(vita products) = %d, want %d",
+			len(templates[1].Products), len(vitaProducts))
+	}
+	for i, p := range templates[1].Products {
+		want := vitaProducts[i]
+		if p.Denumire != want.Denumire || p.PretCuTVA != want.PretCuTVA ||
+			p.ProcentDinIntrare != want.ProcentDinIntrare {
+			t.Errorf("vita product %d = %+v, want %+v", i, p, want)
+		}
+		if p.TemplateID != templates[1].ID || p.Ordine != i {
+			t.Errorf("vita product %d templateId/ordine = %d/%d, want %d/%d",
+				i, p.TemplateID, p.Ordine, templates[1].ID, i)
+		}
 	}
 	if len(templates[0].Products) != len(seedProducts) {
 		t.Fatalf("len(products) = %d, want %d", len(templates[0].Products), len(seedProducts))
@@ -75,12 +93,16 @@ func TestOpenSeedsRatiosSummingToExactlyOneHundred(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	var total float64
-	for _, p := range templates[0].Products {
-		total += p.ProcentDinIntrare
-	}
-	if calc.Round3(total) != 100 {
-		t.Errorf("total procente = %v, want exactly 100", calc.Round3(total))
+	// Every seeded template, not just the pig one: a shipped list whose ratios
+	// do not reach 100 would refuse to save the first time Setari was opened.
+	for _, tpl := range templates {
+		var total float64
+		for _, p := range tpl.Products {
+			total += p.ProcentDinIntrare
+		}
+		if calc.Round3(total) != 100 {
+			t.Errorf("total procente for %q = %v, want exactly 100", tpl.Nume, calc.Round3(total))
+		}
 	}
 }
 
@@ -172,9 +194,11 @@ func TestOpenResetsAPreReleaseDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(templates) != 1 || len(templates[0].Products) != len(seedProducts) {
-		t.Fatalf("got %d templates with %d products, want 1 with %d",
-			len(templates), len(templates[0].Products), len(seedProducts))
+	if len(templates) != 2 || len(templates[0].Products) != len(seedProducts) ||
+		len(templates[1].Products) != len(vitaProducts) {
+		t.Fatalf("got %d templates with %d and %d products, want 2 with %d and %d",
+			len(templates), len(templates[0].Products), len(templates[1].Products),
+			len(seedProducts), len(vitaProducts))
 	}
 	settings, err := s.GetSettings()
 	if err != nil {
@@ -242,11 +266,14 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(templates) != 1 {
-		t.Fatalf("len(templates) = %d, want 1", len(templates))
+	if len(templates) != 2 {
+		t.Fatalf("len(templates) = %d, want 2", len(templates))
 	}
-	if len(templates[0].Products) != 0 {
-		t.Errorf("len(products) = %d after reopening an emptied DB, want 0 (re-seeding must not happen)", len(templates[0].Products))
+	for _, tpl := range templates {
+		if len(tpl.Products) != 0 {
+			t.Errorf("len(products) for %q = %d after reopening an emptied DB, want 0 (re-seeding must not happen)",
+				tpl.Nume, len(tpl.Products))
+		}
 	}
 }
 

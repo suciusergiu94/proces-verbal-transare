@@ -14,9 +14,12 @@ func seededTemplate(t *testing.T, s *Store) model.Template {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(templates) != 1 {
-		t.Fatalf("len(templates) = %d, want 1", len(templates))
+	if len(templates) == 0 {
+		t.Fatal("len(templates) = 0, want the seeded templates")
 	}
+	// The pig template, which the seeded document belongs to. The seed ships a
+	// beef template beside it; tests that care how many there are assert that
+	// for themselves.
 	return templates[0]
 }
 
@@ -67,15 +70,16 @@ func TestSaveTemplatesInsertsANewTemplateWithItsProducts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(stored) != 2 {
-		t.Fatalf("len(templates) = %d, want 2", len(stored))
+	if len(stored) != len(templates) {
+		t.Fatalf("len(templates) = %d, want %d", len(stored), len(templates))
 	}
-	vitel := stored[1]
+	last := len(stored) - 1
+	vitel := stored[last]
 	if vitel.Nume != "Carcasa Vitel" {
 		t.Errorf("nume = %q, want %q", vitel.Nume, "Carcasa Vitel")
 	}
-	if vitel.Ordine != 1 {
-		t.Errorf("ordine = %d, want 1 (its position in the saved slice)", vitel.Ordine)
+	if vitel.Ordine != last {
+		t.Errorf("ordine = %d, want %d (its position in the saved slice)", vitel.Ordine, last)
 	}
 	if len(vitel.Products) != 2 {
 		t.Fatalf("len(products) = %d, want 2", len(vitel.Products))
@@ -106,9 +110,13 @@ func TestSaveTemplatesUpdatesRenamesAndReorders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	// Swap the two and rename the first.
+	// Swap the first and last, and rename the first. Everything between keeps
+	// its place, so this is a reorder rather than a rewrite of the whole list.
 	stored[0].Nume = "Carcasa Porc mare"
-	swapped := []model.Template{stored[1], stored[0]}
+	last := len(stored) - 1
+	swapped := make([]model.Template, len(stored))
+	copy(swapped, stored)
+	swapped[0], swapped[last] = swapped[last], swapped[0]
 	if err := s.SaveTemplates(swapped); err != nil {
 		t.Fatalf("SaveTemplates: %v", err)
 	}
@@ -117,15 +125,19 @@ func TestSaveTemplatesUpdatesRenamesAndReorders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
+	if len(after) != len(stored) {
+		t.Fatalf("len(after) = %d, want %d — a reorder must not add or drop a template",
+			len(after), len(stored))
+	}
 	if after[0].Nume != "Carcasa Vitel" {
 		t.Errorf("after[0] = %q, want %q", after[0].Nume, "Carcasa Vitel")
 	}
-	if after[1].Nume != "Carcasa Porc mare" {
-		t.Errorf("after[1] = %q, want %q", after[1].Nume, "Carcasa Porc mare")
+	if after[last].Nume != "Carcasa Porc mare" {
+		t.Errorf("after[%d] = %q, want %q", last, after[last].Nume, "Carcasa Porc mare")
 	}
-	if after[1].ID != stored[0].ID {
+	if after[last].ID != stored[0].ID {
 		t.Errorf("the renamed template got a new id (%d, was %d) — it was replaced, not updated",
-			after[1].ID, stored[0].ID)
+			after[last].ID, stored[0].ID)
 	}
 }
 

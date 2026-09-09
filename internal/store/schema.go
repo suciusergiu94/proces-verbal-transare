@@ -90,6 +90,24 @@ CREATE INDEX IF NOT EXISTS idx_iesire_document ON document_iesire_rows(document_
 // as a category.
 const defaultTemplateNume = "Carcasa Porc"
 
+// vitaTemplateNume is the second template a fresh install is seeded with. The
+// shop butchers beef as well as pork, and the two profiles share nothing — not
+// the cuts, not the prices, not the ratios — so shipping only the pig list
+// would leave every install retyping this one.
+const vitaTemplateNume = "Pulpa vita Angus"
+
+// vitaProducts are that template's cuts, in display order. Unlike the pig list,
+// whose ratios are derived from the quantities printed on the paper form, these
+// ratios are given directly — there is no printed form to derive them from —
+// and they are stated to three decimals so they sum to exactly 100.
+var vitaProducts = []model.Product{
+	{Denumire: "Pulpa vita", UM: "Kg", PretCuTVA: 55.0, ProcentDinIntrare: 45.514},
+	{Denumire: "Rasol cu os", UM: "Kg", PretCuTVA: 47.0, ProcentDinIntrare: 10.403},
+	{Denumire: "CVL", UM: "Kg", PretCuTVA: 45.0, ProcentDinIntrare: 22.887},
+	{Denumire: "Seu", UM: "Kg", PretCuTVA: 10.0, ProcentDinIntrare: 1.95},
+	{Denumire: "Oase Vita", UM: "Kg", PretCuTVA: 7.0, ProcentDinIntrare: 19.246},
+}
+
 // defaultUnitate is the company printed on the paper form.
 const defaultUnitate = "S.C. Largiana Carn S.R.L."
 
@@ -270,10 +288,10 @@ func dropAllTables(db *sql.DB) error {
 	return nil
 }
 
-// seed writes the first-run contents: the settings row, one template holding
-// the 19 products printed on the paper form, and the proces verbal those
-// products were first filled in on. All of it in one transaction, so a fresh
-// install is either fully seeded or not seeded at all.
+// seed writes the first-run contents: the settings row, the template holding
+// the 19 products printed on the paper form, the beef template beside it, and
+// the proces verbal the pig products were first filled in on. All of it in one
+// transaction, so a fresh install is either fully seeded or not seeded at all.
 func seed(db *sql.DB) error {
 	tx, err := db.Begin()
 	if err != nil {
@@ -318,10 +336,40 @@ func seed(db *sql.DB) error {
 		}
 	}
 
+	// The beef template ships alongside the pig one but carries no document:
+	// nothing has been butchered under it yet, so a draft created from it is
+	// named after the template itself.
+	if _, err := insertTemplate(tx, vitaTemplateNume, 1, vitaProducts); err != nil {
+		return err
+	}
+
 	if err := seedFirstDocument(tx, templateID, productIDs); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// insertTemplate writes one template and its products, in slice order, and
+// returns the template's id.
+func insertTemplate(tx *sql.Tx, nume string, ordine int, products []model.Product) (int64, error) {
+	res, err := tx.Exec(`INSERT INTO templates (nume, ordine) VALUES (?, ?)`, nume, ordine)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	for i, p := range products {
+		if _, err := tx.Exec(
+			`INSERT INTO products (template_id, denumire, um, pret_cu_tva, procent_din_intrare, ordine)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			id, p.Denumire, p.UM, p.PretCuTVA, p.ProcentDinIntrare, i,
+		); err != nil {
+			return 0, err
+		}
+	}
+	return id, nil
 }
 
 // seedDocumentNr is the number the shipped proces verbal carries.

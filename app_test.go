@@ -42,9 +42,13 @@ func seededTemplateID(t *testing.T, a *App) int64 {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	if len(templates) != 1 {
-		t.Fatalf("len(templates) = %d, want 1", len(templates))
+	if len(templates) == 0 {
+		t.Fatal("len(templates) = 0, want the seeded templates")
 	}
+	// The pig template is the one the seeded document belongs to, so it is the
+	// one every test about carrying a shape forward means. The seed ships a
+	// beef template beside it; tests that care how many there are assert that
+	// for themselves.
 	return templates[0].ID
 }
 
@@ -90,7 +94,7 @@ func TestNewDocumentDraftNamesTheIntrareRowAfterAnUnusedTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTemplates: %v", err)
 	}
-	vitel := stored[1]
+	vitel := stored[len(stored)-1]
 
 	draft, err := a.NewDocumentDraft(vitel.ID)
 	if err != nil {
