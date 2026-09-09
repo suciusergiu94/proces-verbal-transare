@@ -21,7 +21,7 @@ import {
   totals,
   valoare,
 } from '../calc';
-import { showConfirm } from '../dialog';
+import { showAlert, showConfirm } from '../dialog';
 import { formatDateRO, formatNumber, parseDateRO, parseNumber } from '../format';
 import { navigate } from '../router';
 import { showToast } from '../toast';
@@ -655,11 +655,11 @@ export async function renderDocumentView(
     // what gets persisted must match the rows being persisted with it.
     recompute();
     if (doc.nr <= 0) {
-      window.alert('Completați numărul documentului (NR).');
+      void showAlert('Completați numărul documentului (NR).');
       return false;
     }
     if (!doc.data) {
-      window.alert(
+      void showAlert(
         value('#f-data').trim() === ''
           ? 'Completați data documentului.'
           : 'Data documentului nu este validă. Folosiți formatul ZZ/LL/AAAA.',
